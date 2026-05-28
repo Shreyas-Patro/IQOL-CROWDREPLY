@@ -74,6 +74,13 @@
   {% if post.replies %}
   <div class="border-t border-zinc-800 px-5 py-4">
 
+    {% if post.status == 'replied' and post.reply_used %}
+    {# Show the exact text that was sent, read-only #}
+    <p class="text-xs text-zinc-600 uppercase tracking-wider font-medium mb-2">Sent reply</p>
+    <p class="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap bg-zinc-800/40 border border-zinc-800 rounded-lg px-3 py-2.5">{{ post.reply_used }}</p>
+    <p class="text-xs text-zinc-700 font-mono mt-1.5 text-right">{{ post.reply_used | length }} ch</p>
+
+    {% else %}
     {# Tone tabs #}
     <div class="flex gap-1 mb-3">
       {% for reply in post.replies %}
@@ -102,6 +109,7 @@
       </p>
     </div>
     {% endfor %}
+    {% endif %}
 
     {# Actions #}
     <div class="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-zinc-800/60">

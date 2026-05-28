@@ -108,6 +108,8 @@ def run_scan_cycle() -> dict:
         "cycle complete — scanned=%d new=%d qualified=%d dismissed=%d",
         scanned, new, qualified, dismissed,
     )
+    from . import state
+    state.record_scan()
     return summary
 
 

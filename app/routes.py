@@ -10,7 +10,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from .db import get_last_scan_time, get_post, get_posts, get_replies, get_stats, update_status
+from . import state
+from .db import get_post, get_posts, get_replies, get_stats, update_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -84,8 +85,7 @@ async def dashboard(
         p["replies"] = [dict(r) for r in get_replies(p["id"])]
         posts.append(p)
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "dashboard.html", {
         "posts": posts,
         "stats": get_stats(),
         "filters": {
@@ -94,7 +94,7 @@ async def dashboard(
             "subreddit": subreddit,
         },
         "subreddits": _load_subreddits(),
-        "last_scan_time": get_last_scan_time(),
+        "last_scan_time": state.get_last_scan(),
     })
 
 
@@ -140,7 +140,7 @@ async def regenerate_replies(post_id: str, request: Request):
         # HTMX request: return HTML card partial for outerHTML swap
         if request.headers.get("HX-Request"):
             return templates.TemplateResponse(
-                "_post_card.html", {"request": request, "post": post}
+                request, "_post_card.html", {"post": post}
             )
         return post
     except Exception as exc:

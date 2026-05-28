@@ -92,6 +92,24 @@ def call_openrouter(messages: list[dict], model: str = None) -> str:
     return content
 
 
+_UTM = "?utm_source=reddit&utm_medium=organic&utm_campaign=crowdreply"
+_URL_RE = re.compile(r"((?:https?://)?alldoors\.in[^\s?]*)", re.IGNORECASE)
+
+
+def _inject_utm(text: str) -> str:
+    """Append UTM params to the first alldoors.in URL found, if no query string present."""
+    parts: list[str] = []
+    cursor = 0
+    for m in _URL_RE.finditer(text):
+        parts.append(text[cursor : m.start()])
+        url = m.group(1)
+        next_ch = text[m.end()] if m.end() < len(text) else ""
+        parts.append(url if next_ch == "?" else url + _UTM)
+        cursor = m.end()
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
 def analyze_and_generate(title: str, body: str, brand_name: str = "AllDoors.in") -> dict:
     system = REPLY_GEN_SYSTEM_PROMPT.format(brand_name=brand_name)
     user = (
@@ -129,10 +147,16 @@ def analyze_and_generate(title: str, body: str, brand_name: str = "AllDoors.in")
     cleaned = re.sub(r"\s*```$", "", cleaned.strip())
 
     try:
-        return json.loads(cleaned)
+        result = json.loads(cleaned)
     except json.JSONDecodeError:
         logger.error("JSON parse failed. Raw response: %s", raw)
         return {"score": 0, "skip": True, "error": "parse failed", "raw": raw}
+
+    # Inject UTM params into any alldoors.in URL in reply texts
+    for reply in result.get("replies", []):
+        if reply.get("text"):
+            reply["text"] = _inject_utm(reply["text"])
+    return result
 
 
 if __name__ == "__main__":
