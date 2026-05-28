@@ -7,10 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from .db import (
-    add_reply, delete_replies, get_post, get_posts,
-    get_replies, get_stats, update_post_analysis, update_status,
-)
+from .db import get_post, get_posts, get_replies, get_stats, update_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -65,8 +62,8 @@ async def dashboard(request: Request, status: Optional[str] = None):
 @router.post("/api/scan")
 async def trigger_scan():
     try:
-        from .pipeline import run_pipeline
-        result = run_pipeline()
+        from .pipeline import run_scan_cycle
+        result = run_scan_cycle()
         return {"status": "ok", "result": result}
     except Exception as exc:
         logger.error("Scan failed: %s", exc)
@@ -104,26 +101,11 @@ async def set_post_status(post_id: str, body: StatusUpdate):
 
 @router.post("/api/posts/{post_id}/regenerate")
 async def regenerate_replies(post_id: str):
-    post = get_post(post_id)
-    if not post:
+    if not get_post(post_id):
         raise HTTPException(status_code=404, detail="Post not found")
     try:
-        from .llm_client import analyze_and_generate
-        result = analyze_and_generate(post["title"], post["body"] or "")
-        if result.get("error"):
-            raise HTTPException(status_code=502, detail=result["error"])
-        delete_replies(post_id)
-        update_post_analysis(
-            post_id,
-            score=float(result.get("score") or 0),
-            intent=result.get("intent"),
-            area=result.get("area"),
-            bhk=result.get("bhk"),
-            budget=result.get("budget"),
-            urgency=result.get("urgency"),
-        )
-        for r in result.get("replies", []):
-            add_reply(post_id, tone=r.get("tone"), text=r.get("text", ""))
+        from .pipeline import regenerate_for_post
+        result = regenerate_for_post(post_id)
         return {
             "status": "ok",
             "replies": [dict(r) for r in get_replies(post_id)],
