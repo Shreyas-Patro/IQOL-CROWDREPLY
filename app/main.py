@@ -16,6 +16,6 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(title="IQOL CrowdReply", lifespan=lifespan)
+app = FastAPI(title="IQOL CROWDREPLY", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(router)
