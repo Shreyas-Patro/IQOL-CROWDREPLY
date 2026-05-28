@@ -3,412 +3,290 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IQOL CrowdReply</title>
+  <title>IQOL CROWDREPLY</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/json-enc.js"></script>
+
   <style>
-    .line-clamp-3 {
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    textarea { font-family: inherit; }
+    body { font-family: 'Inter', sans-serif; }
+
+    /* HTMX indicator: hidden by default, visible during request */
+    .htmx-indicator { opacity: 0; transition: opacity 150ms ease-in; }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator { opacity: 1; }
+
+    /* Hide static label text while request is in flight */
+    .htmx-request .htmx-hide-on-req { display: none; }
+
+    /* Range input accent */
+    input[type="range"] { accent-color: #a1a1aa; }
+
+    /* Scrollbar (webkit) */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen">
 
-<!-- Header -->
-<header class="bg-indigo-700 text-white px-6 py-3.5 flex items-center justify-between shadow-md sticky top-0 z-20">
-  <div class="flex items-center gap-3">
-    <span class="text-lg font-bold tracking-tight">IQOL CrowdReply</span>
-    <span class="text-indigo-300 text-sm hidden sm:inline">AllDoors.in</span>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen" hx-ext="json-enc">
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800/80">
+  <div class="max-w-screen-xl mx-auto px-6 py-4">
+
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 class="text-xs font-semibold tracking-[0.18em] text-zinc-500 uppercase">IQOL CROWDREPLY</h1>
+        <p class="text-xs text-zinc-700 mt-0.5">Reddit brand-mention engine for alldoors.in</p>
+      </div>
+
+      <!-- Scan Now -->
+      <button
+        id="scan-btn"
+        hx-post="/api/scan"
+        hx-swap="none"
+        hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
+        class="flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-white active:scale-95 transition-all">
+        <svg class="htmx-indicator w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        <span class="htmx-hide-on-req text-zinc-400 text-xs">▶</span>
+        Scan Now
+      </button>
+    </div>
+
+    <!-- Stats strip -->
+    <div class="flex items-center gap-6 mt-3.5 pt-3 border-t border-zinc-800/50">
+      <span class="flex items-center gap-2 text-sm">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+        <span class="font-mono font-semibold text-amber-400">{{ stats.new }}</span>
+        <span class="text-zinc-600 text-xs">new</span>
+      </span>
+      <span class="flex items-center gap-2 text-sm">
+        <span class="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0"></span>
+        <span class="font-mono font-semibold text-sky-400">{{ stats.reviewed }}</span>
+        <span class="text-zinc-600 text-xs">reviewed</span>
+      </span>
+      <span class="flex items-center gap-2 text-sm">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+        <span class="font-mono font-semibold text-emerald-400">{{ stats.replied_this_week }}</span>
+        <span class="text-zinc-600 text-xs">replied (7d)</span>
+      </span>
+      <span class="flex items-center gap-2 text-sm">
+        <span class="w-1.5 h-1.5 rounded-full bg-zinc-700 shrink-0"></span>
+        <span class="font-mono font-semibold text-zinc-600">{{ stats.dismissed }}</span>
+        <span class="text-zinc-700 text-xs">dismissed</span>
+      </span>
+    </div>
+
   </div>
-  <button id="scanBtn" onclick="triggerScan()"
-    class="bg-white text-indigo-700 font-semibold px-4 py-1.5 rounded-lg hover:bg-indigo-50 transition text-sm flex items-center gap-1.5 disabled:opacity-60">
-    <span id="scanIcon">▶</span>
-    <span id="scanText">Scan Now</span>
-  </button>
 </header>
 
-<main class="max-w-3xl mx-auto px-4 py-6 space-y-5">
+<!-- ── Body ─────────────────────────────────────────────────────────────── -->
+<div class="max-w-screen-xl mx-auto px-6 py-6 flex gap-7">
 
-  <!-- Stats bar -->
-  <div class="grid grid-cols-5 gap-2">
-    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
-      <div class="text-xl font-bold text-blue-600" id="stat-new">{{ stats.new }}</div>
-      <div class="text-xs text-slate-400 mt-0.5">New</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
-      <div class="text-xl font-bold text-amber-500" id="stat-reviewed">{{ stats.reviewed }}</div>
-      <div class="text-xs text-slate-400 mt-0.5">Reviewed</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
-      <div class="text-xl font-bold text-green-600" id="stat-replied">{{ stats.replied }}</div>
-      <div class="text-xs text-slate-400 mt-0.5">Replied</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
-      <div class="text-xl font-bold text-slate-400" id="stat-dismissed">{{ stats.dismissed }}</div>
-      <div class="text-xs text-slate-400 mt-0.5">Dismissed</div>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
-      <div class="text-xl font-bold text-indigo-600" id="stat-week">{{ stats.replied_this_week }}</div>
-      <div class="text-xs text-slate-400 mt-0.5">This week</div>
-    </div>
-  </div>
+  <!-- Filter sidebar -->
+  <aside class="w-52 flex-none">
+    <div class="sticky top-24 space-y-6">
 
-  <!-- Filter tabs -->
-  <div class="flex gap-2 flex-wrap">
-    {% for val, label in [("all","All"),("new","New"),("reviewed","Reviewed"),("replied","Replied"),("dismissed","Dismissed")] %}
-    <a href="{{ '/' if val == 'all' else '/?status=' + val }}"
-       class="px-4 py-1.5 rounded-full text-sm font-medium transition
-         {% if active_filter == val %}bg-indigo-600 text-white shadow-sm
-         {% else %}bg-white text-slate-600 border border-slate-200 hover:bg-slate-50{% endif %}">
-      {{ label }}
-    </a>
-    {% endfor %}
-  </div>
+      <p class="text-xs font-semibold text-zinc-600 uppercase tracking-widest">Filters</p>
 
-  <!-- Empty state -->
-  {% if not posts %}
-  <div class="text-center py-16 text-slate-400">
-    <div class="text-5xl mb-4">📭</div>
-    <p class="font-semibold text-slate-500">No posts here yet.</p>
-    <p class="text-sm mt-1">
-      Click <strong>Scan Now</strong> above, or seed test data:<br>
-      <code class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs mt-1 inline-block">python -m app.seed_dev</code>
-    </p>
-  </div>
-  {% endif %}
+      <form method="GET" action="/" id="filter-form" class="space-y-5">
 
-  <!-- Post cards -->
-  {% for post in posts %}
-  <div id="post-{{ post.id }}"
-    class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-opacity
-      {% if post.status == 'dismissed' %}opacity-45{% endif %}
-      {% if post.status == 'replied' %}border-l-[3px] border-l-green-400{% endif %}">
+        <!-- Status -->
+        <div class="space-y-1.5">
+          <label class="text-xs text-zinc-500">Status</label>
+          <select name="status" onchange="this.form.submit()"
+            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer">
+            {% for val, label in [("all","All"), ("new","New"), ("reviewed","Reviewed"), ("replied","Replied"), ("dismissed","Dismissed")] %}
+            <option value="{{ val }}" {% if filters.status == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
 
-    <!-- Post header -->
-    <div class="px-5 py-4">
-      <div class="flex items-start gap-3">
+        <!-- Subreddit -->
+        <div class="space-y-1.5">
+          <label class="text-xs text-zinc-500">Subreddit</label>
+          <select name="subreddit" onchange="this.form.submit()"
+            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer">
+            <option value="" {% if not filters.subreddit %}selected{% endif %}>All subreddits</option>
+            {% for sub in subreddits %}
+            <option value="{{ sub }}" {% if filters.subreddit == sub %}selected{% endif %}>r/{{ sub }}</option>
+            {% endfor %}
+          </select>
+        </div>
 
-        <!-- Score -->
-        {% if post.score is not none %}
-        <span class="shrink-0 mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full
-          {% if post.score >= 8 %}bg-green-100 text-green-700
-          {% elif post.score >= 6 %}bg-yellow-100 text-yellow-700
-          {% else %}bg-slate-100 text-slate-500{% endif %}">
-          {{ "%.0f"|format(post.score) }}/10
-        </span>
-        {% endif %}
-
-        <div class="flex-1 min-w-0">
-          <!-- Title -->
-          <a href="{{ post.url }}" target="_blank" rel="noopener"
-             class="text-indigo-700 font-semibold hover:underline text-sm leading-snug">
-            {{ post.title }}
-          </a>
-
-          <!-- Meta line -->
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs text-slate-400">
-            <span>r/{{ post.subreddit }}</span>
-            <span>·</span>
-            <span>u/{{ post.author }}</span>
-            {% if post.posted_at %}
-            <span>·</span>
-            <span>{{ post.posted_at | timeago }}</span>
-            {% endif %}
+        <!-- Min score slider -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs text-zinc-500">Min score</label>
+            <span id="score-display" class="text-xs font-mono text-zinc-300 tabular-nums">{{ filters.min_score | int }}</span>
           </div>
-
-          <!-- Tag pills -->
-          <div class="flex flex-wrap gap-1.5 mt-2">
-            <span class="text-xs px-2 py-0.5 rounded-full font-medium
-              {% if post.status == 'new' %}bg-blue-50 text-blue-600
-              {% elif post.status == 'reviewed' %}bg-amber-50 text-amber-600
-              {% elif post.status == 'replied' %}bg-green-50 text-green-700
-              {% else %}bg-slate-100 text-slate-500{% endif %}"
-              id="status-badge-{{ post.id }}">
-              {{ post.status or 'new' }}
-            </span>
-            {% if post.intent %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">{{ post.intent }}</span>
-            {% endif %}
-            {% if post.area %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ post.area }}</span>
-            {% endif %}
-            {% if post.bhk %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ post.bhk }}</span>
-            {% endif %}
-            {% if post.budget %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ post.budget }}</span>
-            {% endif %}
-            {% if post.urgency == 'high' %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-500 font-medium">urgent</span>
-            {% endif %}
+          <input
+            type="range"
+            name="min_score"
+            min="0" max="10" step="1"
+            value="{{ filters.min_score | int }}"
+            oninput="document.getElementById('score-display').textContent = this.value"
+            onchange="this.form.submit()"
+            class="w-full h-1.5 rounded-full cursor-pointer">
+          <div class="flex justify-between text-xs text-zinc-700 font-mono">
+            <span>0</span><span>5</span><span>10</span>
           </div>
         </div>
 
-        {% if post.status == 'replied' %}
-        <span class="shrink-0 text-xs text-green-600 font-semibold whitespace-nowrap">✓ Replied</span>
-        {% endif %}
-      </div>
-
-      {% if post.body %}
-      <p class="mt-3 text-sm text-slate-600 line-clamp-3 leading-relaxed">{{ post.body }}</p>
-      {% endif %}
+      </form>
     </div>
+  </aside>
 
-    <!-- Replies section -->
-    {% if post.replies %}
-    <div class="border-t border-slate-100 bg-slate-50/70 px-5 py-4" id="replies-{{ post.id }}">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Draft Replies</span>
-        {% if post.status not in ('replied', 'dismissed') %}
-        <button onclick="regenerate('{{ post.id }}')" id="regen-btn-{{ post.id }}"
-          class="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition disabled:opacity-50">
-          ↺ Regenerate
-        </button>
-        {% endif %}
-      </div>
+  <!-- Posts area -->
+  <main class="flex-1 min-w-0">
 
-      <!-- Tone tabs -->
-      <div class="flex gap-2 mb-3">
-        {% for reply in post.replies %}
-        <button onclick="selectTone('{{ post.id }}', {{ loop.index0 }})"
-          class="tone-tab text-xs px-3 py-1 rounded-full font-medium transition
-            {% if loop.first %}bg-indigo-600 text-white{% else %}bg-white text-slate-500 border border-slate-200 hover:bg-slate-100{% endif %}">
-          {{ reply.tone | replace('_', ' ') }}
-        </button>
-        {% endfor %}
-      </div>
-
-      <!-- Reply panels -->
-      {% for reply in post.replies %}
-      <div class="reply-panel {% if not loop.first %}hidden{% endif %}">
-        <textarea
-          id="reply-text-{{ post.id }}-{{ loop.index0 }}"
-          class="w-full text-sm text-slate-700 bg-white border border-slate-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 leading-relaxed"
-          rows="4">{{ reply.text }}</textarea>
-        <div class="flex gap-2 mt-2">
-          <button onclick="copyReply('{{ post.id }}', {{ loop.index0 }})"
-            class="text-xs px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium transition">
-            Copy
-          </button>
-          {% if post.status not in ('replied', 'dismissed') %}
-          <button onclick="markReplied('{{ post.id }}', {{ loop.index0 }})"
-            class="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition">
-            Mark as Replied ✓
-          </button>
-          {% endif %}
-        </div>
-      </div>
+    {% if not posts %}
+    <!-- Empty state -->
+    <div class="flex flex-col items-center justify-center py-28 text-center">
+      <div class="text-3xl text-zinc-700 mb-5 rotate-45">↗</div>
+      <p class="text-zinc-400 font-medium text-sm">No posts in the queue yet.</p>
+      <p class="text-zinc-600 text-xs mt-1.5 max-w-xs leading-relaxed">
+        Click &ldquo;Scan Now&rdquo; to fetch the latest from Reddit.
+      </p>
+    </div>
+    {% else %}
+    <div class="space-y-3">
+      {% for post in posts %}
+        {% include "_post_card.html" %}
       {% endfor %}
     </div>
     {% endif %}
 
-    <!-- Action bar -->
-    {% if post.status not in ('replied', 'dismissed') %}
-    <div class="border-t border-slate-100 px-5 py-3 flex gap-2" id="actions-{{ post.id }}">
-      {% if post.status == 'new' %}
-      <button onclick="setStatus('{{ post.id }}', 'reviewed')"
-        class="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 font-medium hover:bg-amber-100 transition">
-        Approve
-      </button>
-      {% endif %}
-      <button onclick="setStatus('{{ post.id }}', 'dismissed')"
-        class="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium hover:bg-slate-200 transition">
-        Dismiss
-      </button>
-      {% if not post.replies %}
-      <button onclick="regenerate('{{ post.id }}')"
-        class="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 font-medium hover:bg-indigo-100 transition">
-        ↺ Generate Replies
-      </button>
-      {% endif %}
-    </div>
-    {% endif %}
-
-  </div>
-  {% endfor %}
-
-</main>
-
-<!-- Toast -->
-<div id="toast"
-  class="fixed bottom-5 right-5 bg-slate-800 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg
-         opacity-0 pointer-events-none transition-opacity duration-200 z-50">
-  <span id="toast-msg"></span>
+  </main>
 </div>
 
+<!-- ── Footer ───────────────────────────────────────────────────────────── -->
+<footer class="border-t border-zinc-900 px-6 py-4 mt-4">
+  <div class="max-w-screen-xl mx-auto flex items-center justify-between">
+    <span class="text-xs text-zinc-700">IQOL CROWDREPLY · MVP · running locally</span>
+    <span class="text-xs text-zinc-700 font-mono">
+      last scan:
+      {% if last_scan_time %}{{ last_scan_time | timeago }}{% else %}never{% endif %}
+    </span>
+  </div>
+</footer>
+
+<!-- ── Toast ─────────────────────────────────────────────────────────────── -->
+<div id="toast" class="fixed bottom-6 right-6 z-50 pointer-events-none">
+  <div id="toast-inner"
+    class="bg-zinc-800 border border-zinc-700/80 text-zinc-100 text-sm px-4 py-2.5 rounded-xl shadow-2xl
+           opacity-0 translate-y-2 transition-all duration-200 ease-out">
+    <span id="toast-msg"></span>
+  </div>
+</div>
+
+<!-- ── JavaScript ────────────────────────────────────────────────────────── -->
 <script>
-// ── Tone tab switcher ────────────────────────────────────────────────────────
+// ── Toast ──────────────────────────────────────────────────────────────────
+let _toastTimer;
+function showToast(msg) {
+  const inner = document.getElementById('toast-inner');
+  document.getElementById('toast-msg').textContent = msg;
+  inner.classList.remove('opacity-0', 'translate-y-2');
+  inner.classList.add('opacity-100', 'translate-y-0');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    inner.classList.add('opacity-0', 'translate-y-2');
+    inner.classList.remove('opacity-100', 'translate-y-0');
+  }, 3000);
+}
 
-function selectTone(postId, idx) {
+// ── Fade & remove a card ───────────────────────────────────────────────────
+function fadeRemove(el) {
+  if (!el) return;
+  el.style.transition = 'opacity 500ms ease-out';
+  el.style.opacity = '0';
+  setTimeout(() => el.remove(), 520);
+}
+
+// ── Reply tone tab switcher ────────────────────────────────────────────────
+function selectTab(clickedBtn, postId) {
   const card = document.getElementById('post-' + postId);
-  const panels = card.querySelectorAll('.reply-panel');
-  const tabs = card.querySelectorAll('.tone-tab');
+  const idx = parseInt(clickedBtn.dataset.tab, 10);
 
-  panels.forEach((p, i) => p.classList.toggle('hidden', i !== idx));
-  tabs.forEach((t, i) => {
-    if (i === idx) {
-      t.classList.remove('bg-white', 'text-slate-500', 'border', 'border-slate-200', 'hover:bg-slate-100');
-      t.classList.add('bg-indigo-600', 'text-white');
-    } else {
-      t.classList.remove('bg-indigo-600', 'text-white');
-      t.classList.add('bg-white', 'text-slate-500', 'border', 'border-slate-200', 'hover:bg-slate-100');
-    }
+  card.querySelectorAll('[data-tab]').forEach(btn => {
+    const active = parseInt(btn.dataset.tab, 10) === idx;
+    btn.classList.toggle('bg-zinc-700', active);
+    btn.classList.toggle('text-zinc-100', active);
+    btn.classList.toggle('text-zinc-500', !active);
+    btn.classList.toggle('hover:text-zinc-300', !active);
+  });
+
+  card.querySelectorAll('[data-panel]').forEach(panel => {
+    panel.classList.toggle('hidden', parseInt(panel.dataset.panel, 10) !== idx);
   });
 }
 
-// ── Copy ────────────────────────────────────────────────────────────────────
-
-function copyReply(postId, idx) {
-  const ta = document.getElementById('reply-text-' + postId + '-' + idx);
-  navigator.clipboard.writeText(ta.value).then(() => toast('Copied to clipboard'));
+// ── Char counter ───────────────────────────────────────────────────────────
+function updateCharCount(textarea) {
+  const n = textarea.value.length;
+  const counter = textarea.nextElementSibling;
+  if (!counter) return;
+  counter.textContent = n + ' ch';
+  counter.className = 'text-xs font-mono mt-1 text-right ' +
+    (n > 1000 ? 'text-rose-400' : n > 500 ? 'text-amber-400' : 'text-zinc-600');
 }
 
-// ── Status actions ───────────────────────────────────────────────────────────
+// ── Expandable body ────────────────────────────────────────────────────────
+function toggleBody(postId) {
+  const card = document.getElementById('post-' + postId);
+  const preview = card.querySelector('.body-preview');
+  const full = card.querySelector('.body-full');
+  const btn = card.querySelector('.body-toggle');
+  const expanded = !full.classList.contains('hidden');
+  full.classList.toggle('hidden', expanded);
+  preview.classList.toggle('hidden', !expanded);
+  btn.textContent = expanded ? 'show more ↓' : 'show less ↑';
+}
 
-async function setStatus(postId, status, replyUsed) {
-  const body = { status };
-  if (replyUsed !== undefined) body.reply_used = replyUsed;
+// ── Copy & Open Reddit ─────────────────────────────────────────────────────
+async function copyAndOpen(postId, url) {
+  const card = document.getElementById('post-' + postId);
+  const activePanel = card.querySelector('[data-panel]:not(.hidden)');
+  if (!activePanel) return;
+  const text = activePanel.querySelector('textarea').value;
+
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('✓ copied — paste into reddit');
+    window.open(url, '_blank', 'noopener');
+  } catch {
+    showToast('Copy failed — select & copy the text manually');
+  }
+}
+
+// ── Mark Replied (vanilla fetch — captures edited textarea value) ──────────
+async function markReplied(postId) {
+  const card = document.getElementById('post-' + postId);
+  const activePanel = card.querySelector('[data-panel]:not(.hidden)');
+  const replyUsed = activePanel ? activePanel.querySelector('textarea').value : null;
 
   const resp = await fetch('/api/posts/' + postId + '/status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ status: 'replied', reply_used: replyUsed }),
   });
-  if (!resp.ok) { toast('Error: ' + resp.status); return; }
 
-  const card = document.getElementById('post-' + postId);
-  const badge = document.getElementById('status-badge-' + postId);
-  const actions = document.getElementById('actions-' + postId);
-
-  if (status === 'dismissed') {
-    card.classList.add('opacity-45');
-    if (actions) actions.remove();
-    const replySection = document.getElementById('replies-' + postId);
-    if (replySection) {
-      replySection.querySelectorAll('button[onclick*="markReplied"]').forEach(b => b.remove());
-      const regenBtn = document.getElementById('regen-btn-' + postId);
-      if (regenBtn) regenBtn.remove();
-    }
-    if (badge) {
-      badge.textContent = 'dismissed';
-      badge.className = 'text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500';
-    }
-    toast('Dismissed');
-
-  } else if (status === 'reviewed') {
-    if (badge) {
-      badge.textContent = 'reviewed';
-      badge.className = 'text-xs px-2 py-0.5 rounded-full font-medium bg-amber-50 text-amber-600';
-    }
-    // remove approve button, keep dismiss
-    const approveBtn = actions && actions.querySelector('[onclick*="reviewed"]');
-    if (approveBtn) approveBtn.remove();
-    toast('Marked as reviewed');
-
-  } else if (status === 'replied') {
-    if (badge) {
-      badge.textContent = 'replied';
-      badge.className = 'text-xs px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700';
-    }
-    if (actions) actions.remove();
-    card.classList.add('border-l-[3px]', 'border-l-green-400');
-    // hide mark-replied buttons
-    card.querySelectorAll('[onclick*="markReplied"]').forEach(b => b.remove());
-    const regenBtn = document.getElementById('regen-btn-' + postId);
-    if (regenBtn) regenBtn.remove();
-    // add replied indicator near title
-    const titleEl = card.querySelector('a[target="_blank"]');
-    if (titleEl) {
-      const badge2 = document.createElement('span');
-      badge2.className = 'ml-2 text-xs text-green-600 font-semibold';
-      badge2.textContent = '✓ Replied';
-      titleEl.parentNode.insertBefore(badge2, titleEl.nextSibling);
-    }
-    toast('Marked as replied');
+  if (resp.ok) {
+    showToast('✓ marked replied');
+    fadeRemove(card);
+  } else {
+    showToast('Error — could not update status');
   }
-
-  refreshStats();
-}
-
-async function markReplied(postId, idx) {
-  const ta = document.getElementById('reply-text-' + postId + '-' + idx);
-  await setStatus(postId, 'replied', ta ? ta.value : null);
-}
-
-// ── Regenerate ───────────────────────────────────────────────────────────────
-
-async function regenerate(postId) {
-  const btn = document.getElementById('regen-btn-' + postId);
-  if (btn) { btn.textContent = '⟳ …'; btn.disabled = true; }
-
-  try {
-    const resp = await fetch('/api/posts/' + postId + '/regenerate', { method: 'POST' });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      toast('Regenerate failed: ' + (err.detail || resp.status));
-      return;
-    }
-    toast('New replies generated — reloading...');
-    setTimeout(() => location.reload(), 700);
-  } finally {
-    if (btn) { btn.textContent = '↺ Regenerate'; btn.disabled = false; }
-  }
-}
-
-// ── Scan ─────────────────────────────────────────────────────────────────────
-
-async function triggerScan() {
-  const scanBtn = document.getElementById('scanBtn');
-  document.getElementById('scanIcon').textContent = '⟳';
-  document.getElementById('scanText').textContent = 'Scanning…';
-  scanBtn.disabled = true;
-
-  try {
-    const resp = await fetch('/api/scan', { method: 'POST' });
-    if (!resp.ok) { toast('Scan failed'); return; }
-    const data = await resp.json();
-    const r = data.result || {};
-    toast(`Scan done — ${r.new ?? 0} new, ${r.analyzed ?? 0} analyzed`);
-    await refreshStats();
-    if ((r.new ?? 0) > 0) setTimeout(() => location.reload(), 1200);
-  } catch (e) {
-    toast('Scan error: ' + e.message);
-  } finally {
-    document.getElementById('scanIcon').textContent = '▶';
-    document.getElementById('scanText').textContent = 'Scan Now';
-    scanBtn.disabled = false;
-  }
-}
-
-// ── Stats refresh ─────────────────────────────────────────────────────────────
-
-async function refreshStats() {
-  try {
-    const stats = await fetch('/api/stats').then(r => r.json());
-    document.getElementById('stat-new').textContent = stats.new;
-    document.getElementById('stat-reviewed').textContent = stats.reviewed;
-    document.getElementById('stat-replied').textContent = stats.replied;
-    document.getElementById('stat-dismissed').textContent = stats.dismissed;
-    document.getElementById('stat-week').textContent = stats.replied_this_week;
-  } catch (_) {}
-}
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
-
-let _toastTimer;
-function toast(msg) {
-  const el = document.getElementById('toast');
-  document.getElementById('toast-msg').textContent = msg;
-  el.classList.remove('opacity-0', 'pointer-events-none');
-  el.classList.add('opacity-100');
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => {
-    el.classList.remove('opacity-100');
-    el.classList.add('opacity-0', 'pointer-events-none');
-  }, 3000);
 }
 </script>
 

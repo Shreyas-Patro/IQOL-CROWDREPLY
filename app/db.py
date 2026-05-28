@@ -192,6 +192,15 @@ def get_stats() -> dict:
         conn.close()
 
 
+def get_last_scan_time() -> str | None:
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT MAX(fetched_at) FROM posts").fetchone()
+        return row[0] if row and row[0] else None
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     init_db()
     print(f"Database initialised at {DB_PATH.resolve()}")

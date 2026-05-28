@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from .db import get_post, get_posts, get_replies, get_stats, update_status
+from .db import get_last_scan_time, get_post, get_posts, get_replies, get_stats, update_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ def _post_with_replies(post_id: str) -> dict | None:
     return p
 
 
-# ── HTML ────────────────────────────────────────────────────────────────────
+# ── HTML ─────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(
@@ -94,10 +94,11 @@ async def dashboard(
             "subreddit": subreddit,
         },
         "subreddits": _load_subreddits(),
+        "last_scan_time": get_last_scan_time(),
     })
 
 
-# ── API ──────────────────────────────────────────────────────────────────────
+# ── API ───────────────────────────────────────────────────────────────────────
 
 @router.get("/api/posts")
 async def api_posts(
@@ -129,13 +130,19 @@ async def set_post_status(post_id: str, body: StatusUpdate):
 
 
 @router.post("/api/posts/{post_id}/regenerate")
-async def regenerate_replies(post_id: str):
+async def regenerate_replies(post_id: str, request: Request):
     if not get_post(post_id):
         raise HTTPException(status_code=404, detail="Post not found")
     try:
         from .pipeline import regenerate_for_post
         regenerate_for_post(post_id)
-        return _post_with_replies(post_id)
+        post = _post_with_replies(post_id)
+        # HTMX request: return HTML card partial for outerHTML swap
+        if request.headers.get("HX-Request"):
+            return templates.TemplateResponse(
+                "_post_card.html", {"request": request, "post": post}
+            )
+        return post
     except Exception as exc:
         logger.error("Regenerate failed for %s: %s", post_id, exc)
         raise HTTPException(status_code=500, detail=str(exc))
