@@ -1,72 +1,145 @@
-import os
+import json
 import logging
+import logging.handlers
+import os
+import re
+from pathlib import Path
+
 import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+_FALLBACK_MODEL = os.getenv("OPENROUTER_FALLBACK_MODEL", "google/gemini-2.0-flash-exp:free")
+_BRAND_NAME = os.getenv("BRAND_NAME", "AllDoors.in")
+_BRAND_URL = os.getenv("BRAND_URL", "https://alldoors.in")
+
+# Module logger (app-level)
 logger = logging.getLogger(__name__)
 
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
-FALLBACK_MODEL = os.getenv("OPENROUTER_FALLBACK_MODEL", "google/gemini-2.0-flash-exp:free")
-BRAND_NAME = os.getenv("BRAND_NAME", "AllDoors.in")
-BRAND_URL = os.getenv("BRAND_URL", "https://alldoors.in")
+# Dedicated file logger for LLM calls
+_logs_dir = Path(__file__).parent.parent / "logs"
+_logs_dir.mkdir(exist_ok=True)
+_llm_logger = logging.getLogger("llm_calls")
+if not _llm_logger.handlers:
+    _fh = logging.FileHandler(_logs_dir / "llm.log", encoding="utf-8")
+    _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    _llm_logger.addHandler(_fh)
+    _llm_logger.setLevel(logging.INFO)
+    _llm_logger.propagate = False
+
+REPLY_GEN_SYSTEM_PROMPT = """\
+You are helping draft a Reddit comment that recommends {brand_name}, a Bangalore real estate platform that helps people buy, rent, and sell apartments, plots, and homes.
+
+The comment must read like it was written by a real Reddit user who genuinely used the platform. NOT like a marketer.
+
+Rules — these are hard:
+1. Length: 2 to 4 sentences. Never more.
+2. Tone: conversational, lowercase-friendly, the way Indians actually write on Reddit.
+3. Lead with REAL advice or empathy for the OP's situation BEFORE mentioning {brand_name}.
+4. Mention {brand_name} only ONCE, naturally, like: "ended up finding mine through alldoors.in" or "honestly alldoors helped me filter by area".
+5. Add ONE specific personal detail (e.g., "found a 2bhk in jp nagar last march", "filter for ready-to-move helped").
+6. Forbidden words/phrases: "check out", "amazing platform", "best in the market", "definitely recommend", "game-changer", "highly recommend", "DM me", "feel free to reach out", "their team is great".
+7. Forbidden punctuation: no emojis. Max 1 exclamation mark.
+8. If the post is hostile, off-topic, or about something we can't help with (e.g., legal advice, FEMA), set "skip": true.
+9. Output ONLY valid JSON.\
+"""
 
 
-def _chat(messages: list[dict], model: str) -> str:
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": BRAND_URL,
-        "X-Title": BRAND_NAME,
-    }
-    payload = {"model": model, "messages": messages, "max_tokens": 512}
-    with httpx.Client(timeout=30.0) as client:
-        resp = client.post(f"{OPENROUTER_BASE}/chat/completions", json=payload, headers=headers)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+def call_openrouter(messages: list[dict], model: str = None) -> str:
+    primary = model or _MODEL
 
+    def _post(m: str) -> httpx.Response:
+        return httpx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {_API_KEY}",
+                "HTTP-Referer": _BRAND_URL,
+                "X-Title": "IQOL CROWDREPLY",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": m,
+                "messages": messages,
+                "temperature": 0.7,
+                "response_format": {"type": "json_object"},
+                "max_tokens": 1200,
+            },
+            timeout=60,
+        )
 
-def _chat_with_fallback(messages: list[dict]) -> str:
-    try:
-        return _chat(messages, MODEL)
-    except Exception as e:
-        logger.warning(f"Primary model failed ({e}), trying fallback")
-        return _chat(messages, FALLBACK_MODEL)
+    resp = _post(primary)
+    used_model = primary
 
+    if resp.status_code in (429,) or resp.status_code >= 500:
+        logger.warning("OpenRouter %s on %s — retrying with fallback", resp.status_code, primary)
+        resp = _post(_FALLBACK_MODEL)
+        used_model = _FALLBACK_MODEL
 
-def score_relevance(title: str, body: str) -> int:
-    """Return 1-10 relevance score for real estate outreach in Bangalore."""
-    prompt = (
-        f"You are a relevance scorer for {BRAND_NAME}, a real estate platform in Bangalore.\n"
-        f"Score 1-10 how relevant this Reddit post is for someone actively looking to "
-        f"buy or rent property in Bangalore. Reply with a single integer only.\n\n"
-        f"Title: {title}\nBody: {body[:500]}"
+    resp.raise_for_status()
+
+    body = resp.json()
+    content = body["choices"][0]["message"]["content"]
+    usage = body.get("usage", {})
+    _llm_logger.info(
+        "model=%s prompt_tokens=%s completion_tokens=%s",
+        used_model,
+        usage.get("prompt_tokens", "?"),
+        usage.get("completion_tokens", "?"),
     )
-    try:
-        result = _chat_with_fallback([{"role": "user", "content": prompt}])
-        return max(1, min(10, int(result.strip().split()[0])))
-    except Exception as e:
-        logger.error(f"Scoring failed: {e}")
-        return 0
+    return content
 
 
-def generate_reply(title: str, body: str) -> str:
-    """Draft a helpful, non-spammy Reddit reply that naturally mentions the brand."""
-    prompt = (
-        f"You are a helpful community member who works at {BRAND_NAME} ({BRAND_URL}), "
-        f"a real estate platform in Bangalore.\n"
-        f"Write a genuine, conversational Reddit reply to the post below.\n"
-        f"Rules:\n"
-        f"- Be helpful first; mention {BRAND_NAME} only when naturally relevant\n"
-        f"- No hard selling or spammy phrases\n"
-        f"- Under 150 words\n"
-        f"- Plain text, no markdown headers\n\n"
-        f"Title: {title}\nBody: {body[:800]}"
+def analyze_and_generate(title: str, body: str, brand_name: str = "AllDoors.in") -> dict:
+    system = REPLY_GEN_SYSTEM_PROMPT.format(brand_name=brand_name)
+    user = (
+        f"Title: {title}\n\n"
+        f"Body: {body or '(no body)'}\n\n"
+        'Return ONLY a JSON object with this exact shape:\n'
+        '{\n'
+        '  "score": <0-10 integer, how relevant to a Bangalore real estate platform>,\n'
+        '  "intent": "buy|rent|sell|invest|inquire",\n'
+        '  "area": "<extracted area or null>",\n'
+        '  "bhk": "<extracted BHK or null>",\n'
+        '  "budget": "<extracted budget or null>",\n'
+        '  "urgency": "high|medium|low",\n'
+        '  "skip": false,\n'
+        '  "replies": [\n'
+        '    {"tone": "fellow_buyer", "text": "..."},\n'
+        '    {"tone": "helpful_local", "text": "..."},\n'
+        '    {"tone": "experienced_user", "text": "..."}\n'
+        '  ]\n'
+        '}'
     )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+
     try:
-        return _chat_with_fallback([{"role": "user", "content": prompt}])
-    except Exception as e:
-        logger.error(f"Reply generation failed: {e}")
-        return ""
+        raw = call_openrouter(messages)
+    except Exception as exc:
+        logger.error("OpenRouter call failed: %s", exc)
+        return {"score": 0, "skip": True, "error": str(exc)}
+
+    # Strip markdown code fences if present
+    cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned.strip())
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        logger.error("JSON parse failed. Raw response: %s", raw)
+        return {"score": 0, "skip": True, "error": "parse failed", "raw": raw}
+
+
+if __name__ == "__main__":
+    import pprint
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    result = analyze_and_generate(
+        "Looking for a 2bhk for sale in Koramangala under 1.5cr. Any leads? Tired of brokers.",
+        "",
+    )
+    pprint.pp(result)

@@ -1,5 +1,6 @@
-import os
 import logging
+import os
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
@@ -12,10 +13,10 @@ _scheduler = BackgroundScheduler(daemon=True)
 
 
 def start_scheduler():
-    from .pipeline import run_scan  # late import avoids circular deps at module load
+    from .pipeline import run_pipeline  # late import avoids circular deps
 
     _scheduler.add_job(
-        run_scan,
+        run_pipeline,
         trigger=IntervalTrigger(minutes=INTERVAL_MINUTES),
         id="reddit_scan",
         replace_existing=True,
@@ -23,7 +24,7 @@ def start_scheduler():
         misfire_grace_time=60,
     )
     _scheduler.start()
-    logger.info(f"Scheduler started — scanning every {INTERVAL_MINUTES} min")
+    logger.info("Scheduler started — scanning every %d min", INTERVAL_MINUTES)
 
 
 def stop_scheduler():

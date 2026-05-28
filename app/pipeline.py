@@ -1,73 +1,69 @@
-import os
 import logging
-import yaml
-from pathlib import Path
+import os
 
-from .reddit_client import fetch_new_posts, search_subreddit
-from .llm_client import score_relevance, generate_reply
-from .db import upsert_post, save_reply, log_scan
+from .reddit_client import scan_all
+from .llm_client import analyze_and_generate
+from .db import upsert_post, update_post_analysis, add_reply, update_status
 
 logger = logging.getLogger(__name__)
-MIN_SCORE = int(os.getenv("MIN_RELEVANCE_SCORE", "6"))
+MIN_SCORE = float(os.getenv("MIN_RELEVANCE_SCORE", "6"))
 
 
-def load_config() -> dict:
-    with open(Path("config.yaml")) as f:
-        return yaml.safe_load(f)
+def run_pipeline() -> dict:
+    posts = scan_all()
+    logger.info("Scan returned %d keyword-matched posts", len(posts))
 
+    new_count = 0
+    analyzed_count = 0
+    dismissed_count = 0
 
-def run_scan() -> dict:
-    """Full pipeline: scan Reddit → score → generate replies for relevant posts."""
-    config = load_config()
-    subreddits: list[str] = config.get("subreddits", [])
-    keywords: list[str] = config.get("keywords", [])
+    for post in posts:
+        is_new = upsert_post({
+            "id": post["id"],
+            "subreddit": post["subreddit"],
+            "title": post["title"],
+            "body": post["body"],
+            "author": post["author"],
+            "url": post["url"],
+            "posted_at": post["posted_at"].isoformat(),
+            "score": None,
+            "raw_json": post["raw_json"],
+        })
+        if not is_new:
+            continue
+        new_count += 1
 
-    total_found = 0
-    total_relevant = 0
+        result = analyze_and_generate(post["title"], post["body"])
 
-    for subreddit in subreddits:
-        raw_posts: list[dict] = []
+        if result.get("skip") or float(result.get("score") or 0) < MIN_SCORE:
+            update_status(post["id"], "dismissed")
+            dismissed_count += 1
+            logger.debug(
+                "Dismissed %s (score=%s skip=%s)", post["id"],
+                result.get("score"), result.get("skip"),
+            )
+            continue
 
-        raw_posts.extend(fetch_new_posts(subreddit))
-
-        # Search a rotating subset of keywords to avoid hammering the API
-        for kw in keywords[:4]:
-            raw_posts.extend(search_subreddit(subreddit, kw))
-
-        # Deduplicate within this batch
-        seen: set[str] = set()
-        unique: list[dict] = []
-        for p in raw_posts:
-            if p["id"] not in seen:
-                seen.add(p["id"])
-                unique.append(p)
-
-        total_found += len(unique)
-        relevant_count = 0
-
-        for post in unique:
-            combined = f"{post['title']} {post['body']}".strip()
-            if not combined:
-                continue
-
-            post["relevance_score"] = score_relevance(post["title"], post["body"])
-            is_new = upsert_post(post)
-
-            if not is_new:
-                continue
-
-            if post["relevance_score"] >= MIN_SCORE:
-                reply = generate_reply(post["title"], post["body"])
-                if reply:
-                    save_reply(post["id"], reply)
-                    relevant_count += 1
-
-        log_scan(subreddit, len(unique), relevant_count)
-        total_relevant += relevant_count
-        logger.info(f"r/{subreddit}: {len(unique)} posts scanned, {relevant_count} replies drafted")
+        update_post_analysis(
+            post["id"],
+            score=float(result.get("score", 0)),
+            intent=result.get("intent"),
+            area=result.get("area"),
+            bhk=result.get("bhk"),
+            budget=result.get("budget"),
+            urgency=result.get("urgency"),
+        )
+        for r in result.get("replies", []):
+            add_reply(post["id"], tone=r.get("tone"), text=r.get("text", ""))
+        analyzed_count += 1
+        logger.info(
+            "Analyzed %s — score=%s intent=%s area=%s",
+            post["id"], result.get("score"), result.get("intent"), result.get("area"),
+        )
 
     return {
-        "subreddits_scanned": len(subreddits),
-        "posts_found": total_found,
-        "replies_generated": total_relevant,
+        "posts_found": len(posts),
+        "new": new_count,
+        "analyzed": analyzed_count,
+        "dismissed": dismissed_count,
     }

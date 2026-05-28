@@ -1,107 +1,416 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IQOL CrowdReply</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .line-clamp-3 {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    textarea { font-family: inherit; }
+  </style>
 </head>
-<body class="bg-gray-50 text-gray-800 min-h-screen">
+<body class="bg-slate-50 text-slate-800 min-h-screen">
 
-  <header class="bg-indigo-700 text-white px-6 py-4 flex items-center justify-between shadow">
-    <h1 class="text-xl font-bold tracking-tight">IQOL CrowdReply</h1>
-    <form method="post" action="/scan">
-      <button type="submit"
-        class="bg-white text-indigo-700 font-semibold px-4 py-1.5 rounded hover:bg-indigo-50 transition text-sm">
-        ▶ Scan Now
-      </button>
-    </form>
-  </header>
+<!-- Header -->
+<header class="bg-indigo-700 text-white px-6 py-3.5 flex items-center justify-between shadow-md sticky top-0 z-20">
+  <div class="flex items-center gap-3">
+    <span class="text-lg font-bold tracking-tight">IQOL CrowdReply</span>
+    <span class="text-indigo-300 text-sm hidden sm:inline">AllDoors.in</span>
+  </div>
+  <button id="scanBtn" onclick="triggerScan()"
+    class="bg-white text-indigo-700 font-semibold px-4 py-1.5 rounded-lg hover:bg-indigo-50 transition text-sm flex items-center gap-1.5 disabled:opacity-60">
+    <span id="scanIcon">▶</span>
+    <span id="scanText">Scan Now</span>
+  </button>
+</header>
 
-  <main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+<main class="max-w-3xl mx-auto px-4 py-6 space-y-5">
 
-    <!-- Scan log strip -->
-    {% if stats %}
-    <section>
-      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Recent Scans</h2>
-      <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table class="min-w-full text-sm">
-          <thead class="bg-gray-100 text-gray-600 text-xs uppercase">
-            <tr>
-              <th class="px-4 py-2 text-left">Subreddit</th>
-              <th class="px-4 py-2 text-right">Found</th>
-              <th class="px-4 py-2 text-right">Relevant</th>
-              <th class="px-4 py-2 text-left">Time</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            {% for s in stats %}
-            <tr class="hover:bg-gray-50">
-              <td class="px-4 py-2 font-mono">r/{{ s.subreddit }}</td>
-              <td class="px-4 py-2 text-right">{{ s.posts_found }}</td>
-              <td class="px-4 py-2 text-right text-green-600 font-medium">{{ s.posts_relevant }}</td>
-              <td class="px-4 py-2 text-gray-400 text-xs">{{ s.scanned_at }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
-    {% endif %}
+  <!-- Stats bar -->
+  <div class="grid grid-cols-5 gap-2">
+    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
+      <div class="text-xl font-bold text-blue-600" id="stat-new">{{ stats.new }}</div>
+      <div class="text-xs text-slate-400 mt-0.5">New</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
+      <div class="text-xl font-bold text-amber-500" id="stat-reviewed">{{ stats.reviewed }}</div>
+      <div class="text-xs text-slate-400 mt-0.5">Reviewed</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
+      <div class="text-xl font-bold text-green-600" id="stat-replied">{{ stats.replied }}</div>
+      <div class="text-xs text-slate-400 mt-0.5">Replied</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
+      <div class="text-xl font-bold text-slate-400" id="stat-dismissed">{{ stats.dismissed }}</div>
+      <div class="text-xs text-slate-400 mt-0.5">Dismissed</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-3 py-3 text-center shadow-sm">
+      <div class="text-xl font-bold text-indigo-600" id="stat-week">{{ stats.replied_this_week }}</div>
+      <div class="text-xs text-slate-400 mt-0.5">This week</div>
+    </div>
+  </div>
 
-    <!-- Posts feed -->
-    <section>
-      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-        Posts ({{ posts | length }})
-      </h2>
+  <!-- Filter tabs -->
+  <div class="flex gap-2 flex-wrap">
+    {% for val, label in [("all","All"),("new","New"),("reviewed","Reviewed"),("replied","Replied"),("dismissed","Dismissed")] %}
+    <a href="{{ '/' if val == 'all' else '/?status=' + val }}"
+       class="px-4 py-1.5 rounded-full text-sm font-medium transition
+         {% if active_filter == val %}bg-indigo-600 text-white shadow-sm
+         {% else %}bg-white text-slate-600 border border-slate-200 hover:bg-slate-50{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
 
-      {% if not posts %}
-        <p class="text-gray-400 italic">No posts yet. Click "Scan Now" to start.</p>
-      {% endif %}
+  <!-- Empty state -->
+  {% if not posts %}
+  <div class="text-center py-16 text-slate-400">
+    <div class="text-5xl mb-4">📭</div>
+    <p class="font-semibold text-slate-500">No posts here yet.</p>
+    <p class="text-sm mt-1">
+      Click <strong>Scan Now</strong> above, or seed test data:<br>
+      <code class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs mt-1 inline-block">python -m app.seed_dev</code>
+    </p>
+  </div>
+  {% endif %}
 
-      <div class="space-y-4">
-        {% for post in posts %}
-        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div class="px-5 py-4">
-            <div class="flex items-start justify-between gap-4">
-              <div class="flex-1 min-w-0">
-                <a href="{{ post.url }}" target="_blank" rel="noopener"
-                   class="text-indigo-700 font-semibold hover:underline text-sm leading-snug">
-                  {{ post.title or "(comment)" }}
-                </a>
-                <p class="text-xs text-gray-400 mt-0.5">
-                  r/{{ post.subreddit }} · u/{{ post.author }} · score {{ post.score }}
-                </p>
-              </div>
-              <span class="shrink-0 text-xs font-bold px-2 py-0.5 rounded-full
-                {% if post.relevance_score >= 8 %}bg-green-100 text-green-700
-                {% elif post.relevance_score >= 6 %}bg-yellow-100 text-yellow-700
-                {% else %}bg-gray-100 text-gray-500{% endif %}">
-                {{ post.relevance_score }}/10
-              </span>
-            </div>
+  <!-- Post cards -->
+  {% for post in posts %}
+  <div id="post-{{ post.id }}"
+    class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-opacity
+      {% if post.status == 'dismissed' %}opacity-45{% endif %}
+      {% if post.status == 'replied' %}border-l-[3px] border-l-green-400{% endif %}">
 
-            {% if post.body %}
-            <p class="mt-2 text-sm text-gray-600 line-clamp-3">{{ post.body[:300] }}</p>
+    <!-- Post header -->
+    <div class="px-5 py-4">
+      <div class="flex items-start gap-3">
+
+        <!-- Score -->
+        {% if post.score is not none %}
+        <span class="shrink-0 mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full
+          {% if post.score >= 8 %}bg-green-100 text-green-700
+          {% elif post.score >= 6 %}bg-yellow-100 text-yellow-700
+          {% else %}bg-slate-100 text-slate-500{% endif %}">
+          {{ "%.0f"|format(post.score) }}/10
+        </span>
+        {% endif %}
+
+        <div class="flex-1 min-w-0">
+          <!-- Title -->
+          <a href="{{ post.url }}" target="_blank" rel="noopener"
+             class="text-indigo-700 font-semibold hover:underline text-sm leading-snug">
+            {{ post.title }}
+          </a>
+
+          <!-- Meta line -->
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs text-slate-400">
+            <span>r/{{ post.subreddit }}</span>
+            <span>·</span>
+            <span>u/{{ post.author }}</span>
+            {% if post.posted_at %}
+            <span>·</span>
+            <span>{{ post.posted_at | timeago }}</span>
             {% endif %}
           </div>
 
-          {% if post.replies %}
-          <div class="border-t border-gray-100 bg-indigo-50 px-5 py-3 space-y-3">
-            {% for reply in post.replies %}
-            <div>
-              <p class="text-xs text-indigo-500 font-semibold mb-1">Drafted reply</p>
-              <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ reply.reply_text }}</p>
-              <p class="text-xs text-gray-400 mt-1">{{ reply.generated_at }}</p>
-            </div>
-            {% endfor %}
+          <!-- Tag pills -->
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium
+              {% if post.status == 'new' %}bg-blue-50 text-blue-600
+              {% elif post.status == 'reviewed' %}bg-amber-50 text-amber-600
+              {% elif post.status == 'replied' %}bg-green-50 text-green-700
+              {% else %}bg-slate-100 text-slate-500{% endif %}"
+              id="status-badge-{{ post.id }}">
+              {{ post.status or 'new' }}
+            </span>
+            {% if post.intent %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">{{ post.intent }}</span>
+            {% endif %}
+            {% if post.area %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ post.area }}</span>
+            {% endif %}
+            {% if post.bhk %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ post.bhk }}</span>
+            {% endif %}
+            {% if post.budget %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{{ post.budget }}</span>
+            {% endif %}
+            {% if post.urgency == 'high' %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-500 font-medium">urgent</span>
+            {% endif %}
           </div>
-          {% endif %}
         </div>
+
+        {% if post.status == 'replied' %}
+        <span class="shrink-0 text-xs text-green-600 font-semibold whitespace-nowrap">✓ Replied</span>
+        {% endif %}
+      </div>
+
+      {% if post.body %}
+      <p class="mt-3 text-sm text-slate-600 line-clamp-3 leading-relaxed">{{ post.body }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Replies section -->
+    {% if post.replies %}
+    <div class="border-t border-slate-100 bg-slate-50/70 px-5 py-4" id="replies-{{ post.id }}">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Draft Replies</span>
+        {% if post.status not in ('replied', 'dismissed') %}
+        <button onclick="regenerate('{{ post.id }}')" id="regen-btn-{{ post.id }}"
+          class="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition disabled:opacity-50">
+          ↺ Regenerate
+        </button>
+        {% endif %}
+      </div>
+
+      <!-- Tone tabs -->
+      <div class="flex gap-2 mb-3">
+        {% for reply in post.replies %}
+        <button onclick="selectTone('{{ post.id }}', {{ loop.index0 }})"
+          class="tone-tab text-xs px-3 py-1 rounded-full font-medium transition
+            {% if loop.first %}bg-indigo-600 text-white{% else %}bg-white text-slate-500 border border-slate-200 hover:bg-slate-100{% endif %}">
+          {{ reply.tone | replace('_', ' ') }}
+        </button>
         {% endfor %}
       </div>
-    </section>
 
-  </main>
+      <!-- Reply panels -->
+      {% for reply in post.replies %}
+      <div class="reply-panel {% if not loop.first %}hidden{% endif %}">
+        <textarea
+          id="reply-text-{{ post.id }}-{{ loop.index0 }}"
+          class="w-full text-sm text-slate-700 bg-white border border-slate-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 leading-relaxed"
+          rows="4">{{ reply.text }}</textarea>
+        <div class="flex gap-2 mt-2">
+          <button onclick="copyReply('{{ post.id }}', {{ loop.index0 }})"
+            class="text-xs px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium transition">
+            Copy
+          </button>
+          {% if post.status not in ('replied', 'dismissed') %}
+          <button onclick="markReplied('{{ post.id }}', {{ loop.index0 }})"
+            class="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition">
+            Mark as Replied ✓
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Action bar -->
+    {% if post.status not in ('replied', 'dismissed') %}
+    <div class="border-t border-slate-100 px-5 py-3 flex gap-2" id="actions-{{ post.id }}">
+      {% if post.status == 'new' %}
+      <button onclick="setStatus('{{ post.id }}', 'reviewed')"
+        class="text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 font-medium hover:bg-amber-100 transition">
+        Approve
+      </button>
+      {% endif %}
+      <button onclick="setStatus('{{ post.id }}', 'dismissed')"
+        class="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-medium hover:bg-slate-200 transition">
+        Dismiss
+      </button>
+      {% if not post.replies %}
+      <button onclick="regenerate('{{ post.id }}')"
+        class="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 font-medium hover:bg-indigo-100 transition">
+        ↺ Generate Replies
+      </button>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+  {% endfor %}
+
+</main>
+
+<!-- Toast -->
+<div id="toast"
+  class="fixed bottom-5 right-5 bg-slate-800 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg
+         opacity-0 pointer-events-none transition-opacity duration-200 z-50">
+  <span id="toast-msg"></span>
+</div>
+
+<script>
+// ── Tone tab switcher ────────────────────────────────────────────────────────
+
+function selectTone(postId, idx) {
+  const card = document.getElementById('post-' + postId);
+  const panels = card.querySelectorAll('.reply-panel');
+  const tabs = card.querySelectorAll('.tone-tab');
+
+  panels.forEach((p, i) => p.classList.toggle('hidden', i !== idx));
+  tabs.forEach((t, i) => {
+    if (i === idx) {
+      t.classList.remove('bg-white', 'text-slate-500', 'border', 'border-slate-200', 'hover:bg-slate-100');
+      t.classList.add('bg-indigo-600', 'text-white');
+    } else {
+      t.classList.remove('bg-indigo-600', 'text-white');
+      t.classList.add('bg-white', 'text-slate-500', 'border', 'border-slate-200', 'hover:bg-slate-100');
+    }
+  });
+}
+
+// ── Copy ────────────────────────────────────────────────────────────────────
+
+function copyReply(postId, idx) {
+  const ta = document.getElementById('reply-text-' + postId + '-' + idx);
+  navigator.clipboard.writeText(ta.value).then(() => toast('Copied to clipboard'));
+}
+
+// ── Status actions ───────────────────────────────────────────────────────────
+
+async function setStatus(postId, status, replyUsed) {
+  const body = { status };
+  if (replyUsed !== undefined) body.reply_used = replyUsed;
+
+  const resp = await fetch('/api/posts/' + postId + '/status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) { toast('Error: ' + resp.status); return; }
+
+  const card = document.getElementById('post-' + postId);
+  const badge = document.getElementById('status-badge-' + postId);
+  const actions = document.getElementById('actions-' + postId);
+
+  if (status === 'dismissed') {
+    card.classList.add('opacity-45');
+    if (actions) actions.remove();
+    const replySection = document.getElementById('replies-' + postId);
+    if (replySection) {
+      replySection.querySelectorAll('button[onclick*="markReplied"]').forEach(b => b.remove());
+      const regenBtn = document.getElementById('regen-btn-' + postId);
+      if (regenBtn) regenBtn.remove();
+    }
+    if (badge) {
+      badge.textContent = 'dismissed';
+      badge.className = 'text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500';
+    }
+    toast('Dismissed');
+
+  } else if (status === 'reviewed') {
+    if (badge) {
+      badge.textContent = 'reviewed';
+      badge.className = 'text-xs px-2 py-0.5 rounded-full font-medium bg-amber-50 text-amber-600';
+    }
+    // remove approve button, keep dismiss
+    const approveBtn = actions && actions.querySelector('[onclick*="reviewed"]');
+    if (approveBtn) approveBtn.remove();
+    toast('Marked as reviewed');
+
+  } else if (status === 'replied') {
+    if (badge) {
+      badge.textContent = 'replied';
+      badge.className = 'text-xs px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700';
+    }
+    if (actions) actions.remove();
+    card.classList.add('border-l-[3px]', 'border-l-green-400');
+    // hide mark-replied buttons
+    card.querySelectorAll('[onclick*="markReplied"]').forEach(b => b.remove());
+    const regenBtn = document.getElementById('regen-btn-' + postId);
+    if (regenBtn) regenBtn.remove();
+    // add replied indicator near title
+    const titleEl = card.querySelector('a[target="_blank"]');
+    if (titleEl) {
+      const badge2 = document.createElement('span');
+      badge2.className = 'ml-2 text-xs text-green-600 font-semibold';
+      badge2.textContent = '✓ Replied';
+      titleEl.parentNode.insertBefore(badge2, titleEl.nextSibling);
+    }
+    toast('Marked as replied');
+  }
+
+  refreshStats();
+}
+
+async function markReplied(postId, idx) {
+  const ta = document.getElementById('reply-text-' + postId + '-' + idx);
+  await setStatus(postId, 'replied', ta ? ta.value : null);
+}
+
+// ── Regenerate ───────────────────────────────────────────────────────────────
+
+async function regenerate(postId) {
+  const btn = document.getElementById('regen-btn-' + postId);
+  if (btn) { btn.textContent = '⟳ …'; btn.disabled = true; }
+
+  try {
+    const resp = await fetch('/api/posts/' + postId + '/regenerate', { method: 'POST' });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      toast('Regenerate failed: ' + (err.detail || resp.status));
+      return;
+    }
+    toast('New replies generated — reloading...');
+    setTimeout(() => location.reload(), 700);
+  } finally {
+    if (btn) { btn.textContent = '↺ Regenerate'; btn.disabled = false; }
+  }
+}
+
+// ── Scan ─────────────────────────────────────────────────────────────────────
+
+async function triggerScan() {
+  const scanBtn = document.getElementById('scanBtn');
+  document.getElementById('scanIcon').textContent = '⟳';
+  document.getElementById('scanText').textContent = 'Scanning…';
+  scanBtn.disabled = true;
+
+  try {
+    const resp = await fetch('/api/scan', { method: 'POST' });
+    if (!resp.ok) { toast('Scan failed'); return; }
+    const data = await resp.json();
+    const r = data.result || {};
+    toast(`Scan done — ${r.new ?? 0} new, ${r.analyzed ?? 0} analyzed`);
+    await refreshStats();
+    if ((r.new ?? 0) > 0) setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    toast('Scan error: ' + e.message);
+  } finally {
+    document.getElementById('scanIcon').textContent = '▶';
+    document.getElementById('scanText').textContent = 'Scan Now';
+    scanBtn.disabled = false;
+  }
+}
+
+// ── Stats refresh ─────────────────────────────────────────────────────────────
+
+async function refreshStats() {
+  try {
+    const stats = await fetch('/api/stats').then(r => r.json());
+    document.getElementById('stat-new').textContent = stats.new;
+    document.getElementById('stat-reviewed').textContent = stats.reviewed;
+    document.getElementById('stat-replied').textContent = stats.replied;
+    document.getElementById('stat-dismissed').textContent = stats.dismissed;
+    document.getElementById('stat-week').textContent = stats.replied_this_week;
+  } catch (_) {}
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('opacity-0', 'pointer-events-none');
+  el.classList.add('opacity-100');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    el.classList.remove('opacity-100');
+    el.classList.add('opacity-0', 'pointer-events-none');
+  }, 3000);
+}
+</script>
+
 </body>
 </html>

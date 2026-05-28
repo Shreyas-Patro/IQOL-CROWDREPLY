@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+
 from .db import init_db
-from .scheduler import start_scheduler, stop_scheduler
 from .routes import router
+from .scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager

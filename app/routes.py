@@ -1,43 +1,135 @@
-from fastapi import APIRouter, Request, HTTPException
+import logging
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
-from .db import get_recent_posts, get_replies_for_post, get_scan_stats
-from .pipeline import run_scan
+from .db import (
+    add_reply, delete_replies, get_post, get_posts,
+    get_replies, get_stats, update_post_analysis, update_status,
+)
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
 
 
+def _timeago(value) -> str:
+    if not value:
+        return ""
+    try:
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - value
+        if delta.days >= 1:
+            return f"{delta.days}d ago"
+        h = delta.seconds // 3600
+        if h >= 1:
+            return f"{h}h ago"
+        m = delta.seconds // 60
+        return f"{m}m ago"
+    except Exception:
+        return str(value)[:16]
+
+
+templates.env.filters["timeago"] = _timeago
+
+
+# ── HTML ────────────────────────────────────────────────────────────────────
+
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    posts = get_recent_posts(limit=50)
-    posts_with_replies = []
-    for post in posts:
-        row = dict(post)
-        row["replies"] = [dict(r) for r in get_replies_for_post(post["id"])]
-        posts_with_replies.append(row)
-    stats = get_scan_stats()
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "posts": posts_with_replies, "stats": [dict(s) for s in stats]},
-    )
+async def dashboard(request: Request, status: Optional[str] = None):
+    active = status or "all"
+    filter_status = None if active == "all" else active
+    rows = get_posts(status=filter_status, limit=100)
+    posts = []
+    for row in rows:
+        p = dict(row)
+        p["replies"] = [dict(r) for r in get_replies(p["id"])]
+        posts.append(p)
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "posts": posts,
+        "stats": get_stats(),
+        "active_filter": active,
+    })
 
 
-@router.post("/scan")
+# ── API ─────────────────────────────────────────────────────────────────────
+
+@router.post("/api/scan")
 async def trigger_scan():
-    result = run_scan()
-    return {"status": "ok", "result": result}
+    try:
+        from .pipeline import run_pipeline
+        result = run_pipeline()
+        return {"status": "ok", "result": result}
+    except Exception as exc:
+        logger.error("Scan failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/posts")
-async def list_posts(limit: int = 50):
-    return [dict(p) for p in get_recent_posts(limit=limit)]
+@router.get("/api/stats")
+async def api_stats():
+    return get_stats()
 
 
-@router.get("/posts/{post_id}/replies")
-async def post_replies(post_id: str):
-    rows = get_replies_for_post(post_id)
-    if not rows:
-        raise HTTPException(status_code=404, detail="No replies found for this post")
-    return [dict(r) for r in rows]
+@router.get("/api/posts")
+async def api_posts(status: Optional[str] = None, limit: int = 100):
+    rows = get_posts(status=status, limit=limit)
+    result = []
+    for row in rows:
+        p = dict(row)
+        p["replies"] = [dict(r) for r in get_replies(p["id"])]
+        result.append(p)
+    return result
+
+
+class StatusUpdate(BaseModel):
+    status: str
+    reply_used: Optional[str] = None
+
+
+@router.post("/api/posts/{post_id}/status")
+async def set_post_status(post_id: str, body: StatusUpdate):
+    if not get_post(post_id):
+        raise HTTPException(status_code=404, detail="Post not found")
+    update_status(post_id, body.status, reply_used=body.reply_used)
+    return {"status": "ok"}
+
+
+@router.post("/api/posts/{post_id}/regenerate")
+async def regenerate_replies(post_id: str):
+    post = get_post(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    try:
+        from .llm_client import analyze_and_generate
+        result = analyze_and_generate(post["title"], post["body"] or "")
+        if result.get("error"):
+            raise HTTPException(status_code=502, detail=result["error"])
+        delete_replies(post_id)
+        update_post_analysis(
+            post_id,
+            score=float(result.get("score") or 0),
+            intent=result.get("intent"),
+            area=result.get("area"),
+            bhk=result.get("bhk"),
+            budget=result.get("budget"),
+            urgency=result.get("urgency"),
+        )
+        for r in result.get("replies", []):
+            add_reply(post_id, tone=r.get("tone"), text=r.get("text", ""))
+        return {
+            "status": "ok",
+            "replies": [dict(r) for r in get_replies(post_id)],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Regenerate failed for %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail=str(exc))
