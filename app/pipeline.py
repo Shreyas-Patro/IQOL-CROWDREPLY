@@ -56,7 +56,7 @@ def _store_result(post_id: str, result: dict, pf_score: int = None) -> str:
     # Promote to 'new' — handles both fresh posts and pending posts being retried
     update_status(post_id, "new")
     for r in result.get("replies", []):
-        add_reply(post_id, tone=r.get("tone"), text=r.get("text", ""))
+        add_reply(post_id, tone=r.get("tone"), text=r.get("text", ""), quality_issue=r.get("quality_issue"))
     return "qualified"
 
 
@@ -240,7 +240,7 @@ def regenerate_for_post(post_id: str) -> dict:
         urgency=result.get("urgency"),
     )
     for r in result.get("replies", []):
-        add_reply(post_id, tone=r.get("tone"), text=r.get("text", ""))
+        add_reply(post_id, tone=r.get("tone"), text=r.get("text", ""), quality_issue=r.get("quality_issue"))
 
     logger.info("Regenerated replies for %s", post_id)
     return result

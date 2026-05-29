@@ -44,6 +44,7 @@ def init_db():
                 tone TEXT,
                 text TEXT NOT NULL,
                 edited_text TEXT,
+                quality_issue TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -79,6 +80,11 @@ def init_db():
                 conn.commit()
             except sqlite3.OperationalError:
                 pass  # column already exists
+        try:
+            conn.execute("ALTER TABLE replies ADD COLUMN quality_issue TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
         conn.executescript("""
         """)
         conn.commit()
@@ -120,12 +126,12 @@ def update_post_analysis(post_id: str, score: float, intent: str, area: str, bhk
         conn.close()
 
 
-def add_reply(post_id: str, tone: str, text: str):
+def add_reply(post_id: str, tone: str, text: str, quality_issue: str = None):
     conn = get_conn()
     try:
         conn.execute(
-            "INSERT INTO replies (post_id, tone, text) VALUES (?, ?, ?)",
-            (post_id, tone, text),
+            "INSERT INTO replies (post_id, tone, text, quality_issue) VALUES (?, ?, ?, ?)",
+            (post_id, tone, text, quality_issue),
         )
         conn.commit()
     finally:

@@ -11,3 +11,12 @@ INFO:     127.0.0.1:62422 - "POST /login HTTP/1.1" 303 See Other
 INFO:     127.0.0.1:62424 - "POST /login HTTP/1.1" 303 See Other
 INFO:     127.0.0.1:62427 - "GET / HTTP/1.1" 200 OK
 INFO:     127.0.0.1:62429 - "GET /logout HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:59110 - "GET / HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:59110 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59110 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50883 - "POST /login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:57885 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57885 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56218 - "GET /logout HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:56218 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65149 - "GET /api/health HTTP/1.1" 200 OK

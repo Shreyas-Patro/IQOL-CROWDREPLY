@@ -58,7 +58,36 @@ Reply rules — these are hard:
 6. Forbidden words/phrases: "check out", "amazing platform", "best in the market", "definitely recommend", "game-changer", "highly recommend", "DM me", "feel free to reach out", "their team is great".
 7. Forbidden punctuation: no emojis. Max 1 exclamation mark.
 8. If the post is hostile, off-topic, or about something we can't help with (e.g., legal advice, FEMA), set "skip": true.
-9. Output ONLY valid JSON.\
+9. Output ONLY valid JSON.
+10. Never claim a feature that doesn't match the post type — do NOT mention "filtering by plot size" for a 2BHK apartment search. Plot-size filtering is only for plot/land searches.
+11. Don't open every reply with "i" — vary the openings. Sometimes lead with empathy ("broker fatigue is real"), sometimes with local knowledge ("hsr sector 2 has..."), sometimes with a practical observation.
+12. All three reply variants MUST have DIFFERENT opening words and DIFFERENT angles: one personal-anecdote, one local-knowledge, one practical-advice. Never repeat the same sentence structure across variants.
+
+Here are 6 examples of high-quality replies that follow all the rules above. Imitate this STYLE — same lowercase tone, same length, same way of leading with empathy/advice before mentioning the brand:
+
+Example 1 — Buy intent, 2BHK Koramangala
+Post: "Looking for a 2bhk in Koramangala under 1.5cr, tired of brokers"
+Reply (fellow_buyer): "broker fatigue is real, went through this last year. ended up skipping them and using alldoors.in to filter koramangala 2bhks under 1.5cr — the owner-direct filter saved a lot of pointless calls."
+
+Example 2 — Sell intent
+Post: "Want to sell my 3bhk in Whitefield, need quick buyer"
+Reply (experienced_user): "i listed mine on alldoors.in last year, was direct to buyer no middleman. took about 6 weeks but i got close to my asking price. whitefield has decent demand if its near the IT park."
+
+Example 3 — Plot investment
+Post: "Is Sarjapur Road good for plot investment in 2026?"
+Reply (helpful_local): "sarjapur is solid for the long term, especially anything DTCP approved past the wipro circle. i was watching listings on alldoors.in last quarter and prices haven't gone crazy yet — still pockets under 60L if you look for resale."
+
+Example 4 — NRI buyer concerns
+Post: "NRI looking to invest in Bangalore property, where to start?"
+Reply (fellow_buyer): "as an NRI my biggest worry was getting scammed by brokers. i used alldoors.in mostly for the verified owner listings — at least you know the seller is real. start with one area you know, dont try to cover the whole city."
+
+Example 5 — Resale specific
+Post: "Ready-to-move 3bhk in HSR layout, any leads?"
+Reply (helpful_local): "hsr sector 2 and sector 6 have the most resale 3bhks usually. i found mine through alldoors.in filtering for ready-to-move only — saves time vs touring under-construction stuff that's 2 years away."
+
+Example 6 — Budget-conscious
+Post: "First-time buyer in Bangalore, budget 80L, what areas?"
+Reply (experienced_user): "at 80L you can do a decent 2bhk in jp nagar, electronic city, or kanakapura road. i went through alldoors.in with the price ceiling set and it surfaced a bunch of resale options i hadn't seen on the bigger sites. avoid the under-construction stuff at that budget — too many delays."\
 """
 
 _SINGLE_SHAPE = (
@@ -97,6 +126,54 @@ _BATCH_SHAPE = (
     '  ]\n'
     '}'
 )
+
+
+_FORBIDDEN_QA_PHRASES = (
+    "check out",
+    "amazing platform",
+    "best in the market",
+    "definitely recommend",
+    "game-changer",
+    "highly recommend",
+    "dm me",
+    "feel free to reach out",
+    "their team is great",
+)
+
+
+def _check_reply_quality(replies: list[dict]) -> list[dict]:
+    """Attach quality_issue to any reply that fails a local check. Mutates in-place, returns list."""
+    openings: list[tuple] = []
+    for reply in replies:
+        text = (reply.get("text") or "").strip()
+        words = text.split()
+        issue = None
+
+        if "alldoors" not in text.lower():
+            issue = "missing_brand"
+        elif not (20 <= len(words) <= 80):
+            issue = "wrong_length"
+        else:
+            text_lower = text.lower()
+            for phrase in _FORBIDDEN_QA_PHRASES:
+                if phrase in text_lower:
+                    issue = "forbidden_phrase"
+                    break
+
+        if issue:
+            reply["quality_issue"] = issue
+
+        openings.append(tuple(words[:4]) if len(words) >= 4 else tuple(words))
+
+    # Flag duplicate openings across all reply variants in this post
+    for i in range(len(openings)):
+        for j in range(i + 1, len(openings)):
+            if openings[i] and openings[i] == openings[j]:
+                for idx in (i, j):
+                    if "quality_issue" not in replies[idx]:
+                        replies[idx]["quality_issue"] = "duplicate_opening"
+
+    return replies
 
 
 def _get_provider():
@@ -141,6 +218,9 @@ def analyze_one(title: str, body: str) -> dict:
     except json.JSONDecodeError:
         logger.error("JSON parse failed. Raw: %s", raw)
         return {"score": 0, "skip": True, "error": "parse failed", "raw": raw}
+
+    if isinstance(result, dict) and result.get("replies"):
+        _check_reply_quality(result["replies"])
 
     return result
 
@@ -203,6 +283,10 @@ def analyze_batch(posts: list[dict]) -> list[dict]:
     except (json.JSONDecodeError, ValueError) as exc:
         logger.error("Batch parse failed (%s) — falling back to per-post. Raw: %.300s", exc, raw)
         return [analyze_one(p["title"], p.get("body") or "") for p in posts]
+
+    for result in results:
+        if isinstance(result, dict) and result.get("replies"):
+            _check_reply_quality(result["replies"])
 
     return results
 

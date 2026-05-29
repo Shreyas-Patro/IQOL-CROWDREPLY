@@ -138,10 +138,14 @@
         <button
           data-tab="{{ loop.index0 }}"
           onclick="selectTab(this, '{{ post.id }}')"
-          class="px-3 py-1 rounded-md text-xs font-medium transition-colors
+          class="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors
             {%- if loop.first %} bg-zinc-700 text-zinc-100
             {%- else %} text-zinc-500 hover:text-zinc-300{%- endif %}">
           {{ reply.tone | replace("_", " ") | title }}
+          {%- if reply.quality_issue %}
+          <span class="text-[10px] font-semibold text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded px-1 leading-tight cursor-help"
+                title="{% if reply.quality_issue == 'missing_brand' %}missing brand mention{% elif reply.quality_issue == 'wrong_length' %}wrong length (expected 20–80 words){% elif reply.quality_issue == 'forbidden_phrase' %}contains forbidden phrase{% elif reply.quality_issue == 'duplicate_opening' %}duplicate opening (same first words as another variant){% else %}{{ reply.quality_issue | replace('_', ' ') }}{% endif %}">⚠ check</span>
+          {%- endif %}
         </button>
         {% endfor %}
       </div>
