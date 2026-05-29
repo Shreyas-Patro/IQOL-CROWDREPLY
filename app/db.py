@@ -2,6 +2,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+import bcrypt
+
 DB_PATH = Path(__file__).parent.parent / "iqol.db"
 
 
@@ -51,6 +53,16 @@ def init_db():
                 model TEXT,
                 tokens_in INTEGER,
                 tokens_out INTEGER
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                name TEXT NOT NULL,
+                role TEXT DEFAULT 'operator',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login_at TIMESTAMP
             );
 
             CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
@@ -264,6 +276,57 @@ def get_last_scan_time() -> str | None:
     try:
         row = conn.execute("SELECT MAX(fetched_at) FROM posts").fetchone()
         return row[0] if row and row[0] else None
+    finally:
+        conn.close()
+
+
+def get_user_by_email(email: str):
+    conn = get_conn()
+    try:
+        return conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    finally:
+        conn.close()
+
+
+def get_user_by_id(user_id: int):
+    conn = get_conn()
+    try:
+        return conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    finally:
+        conn.close()
+
+
+def verify_password(email: str, password: str):
+    """Returns user dict if credentials are valid, else None."""
+    user = get_user_by_email(email)
+    if user is None:
+        return None
+    if not bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
+        return None
+    return dict(user)
+
+
+def update_last_login(user_id: int):
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (user_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def create_user(email: str, password: str, name: str, role: str = "operator"):
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)",
+            (email, hashed, name, role),
+        )
+        conn.commit()
     finally:
         conn.close()
 

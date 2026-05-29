@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from . import state
-from .db import get_post, get_posts, get_replies, get_stats, update_status
+from .auth import _SESSION_COOKIE, _is_secure, create_session_cookie, current_user
+from .db import get_post, get_posts, get_replies, get_stats, update_status, verify_password, update_last_login
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -61,11 +62,59 @@ def _post_with_replies(post_id: str) -> dict | None:
     return p
 
 
-# ── HTML ─────────────────────────────────────────────────────────────────────
+# ── Auth routes (public) ───────────────────────────────────────────────────────
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse(request, "login.html", {"error": None})
+
+
+@router.post("/login")
+async def login(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    user = verify_password(email, password)
+    if user is None:
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"error": "Incorrect email or password"},
+            status_code=401,
+        )
+    update_last_login(user["id"])
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        _SESSION_COOKIE,
+        create_session_cookie(user["id"]),
+        httponly=True,
+        samesite="lax",
+        max_age=7 * 24 * 3600,
+        secure=_is_secure(),
+    )
+    return response
+
+
+@router.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(_SESSION_COOKIE)
+    return response
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+
+@router.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
+# ── Protected HTML ─────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
+    user: dict = Depends(current_user),
     status: Optional[str] = "new",
     min_score: Optional[float] = None,
     subreddit: Optional[str] = None,
@@ -73,8 +122,6 @@ async def dashboard(
 ):
     filter_status = None if not status or status == "all" else status
     _audit_view = filter_status in (None, "dismissed", "prefiltered", "pending")
-    # Audit views show everything — never apply a default floor.
-    # Actionable views (new / reviewed / replied) apply env default when slider not set.
     if _audit_view:
         effective_min_score = None
     else:
@@ -105,13 +152,15 @@ async def dashboard(
         },
         "subreddits": _load_subreddits(),
         "last_scan_time": state.get_last_scan(),
+        "user": user,
     })
 
 
-# ── API ───────────────────────────────────────────────────────────────────────
+# ── Protected API ──────────────────────────────────────────────────────────────
 
 @router.get("/api/posts")
 async def api_posts(
+    user: dict = Depends(current_user),
     status: Optional[str] = None,
     min_score: Optional[float] = None,
     subreddit: Optional[str] = None,
@@ -133,7 +182,11 @@ class StatusUpdate(BaseModel):
 
 
 @router.post("/api/posts/{post_id}/status")
-async def set_post_status(post_id: str, body: StatusUpdate):
+async def set_post_status(
+    post_id: str,
+    body: StatusUpdate,
+    user: dict = Depends(current_user),
+):
     if not get_post(post_id):
         raise HTTPException(status_code=404, detail="Post not found")
     update_status(post_id, body.status, reply_used=body.reply_used)
@@ -141,14 +194,17 @@ async def set_post_status(post_id: str, body: StatusUpdate):
 
 
 @router.post("/api/posts/{post_id}/regenerate")
-async def regenerate_replies(post_id: str, request: Request):
+async def regenerate_replies(
+    post_id: str,
+    request: Request,
+    user: dict = Depends(current_user),
+):
     if not get_post(post_id):
         raise HTTPException(status_code=404, detail="Post not found")
     try:
         from .pipeline import regenerate_for_post
         regenerate_for_post(post_id)
         post = _post_with_replies(post_id)
-        # HTMX request: return HTML card partial for outerHTML swap
         if request.headers.get("HX-Request"):
             return templates.TemplateResponse(
                 request, "_post_card.html", {"post": post}
@@ -160,7 +216,7 @@ async def regenerate_replies(post_id: str, request: Request):
 
 
 @router.post("/api/scan")
-async def trigger_scan():
+async def trigger_scan(user: dict = Depends(current_user)):
     try:
         from .pipeline import run_scan_cycle
         return run_scan_cycle()
@@ -170,5 +226,5 @@ async def trigger_scan():
 
 
 @router.get("/api/stats")
-async def api_stats():
+async def api_stats(user: dict = Depends(current_user)):
     return get_stats()

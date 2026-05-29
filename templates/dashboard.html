@@ -46,23 +46,29 @@
         <p class="text-xs text-zinc-700 mt-0.5">Reddit brand-mention engine for alldoors.in</p>
       </div>
 
-      <!-- Scan Now — BUG 2: disabled during request, label changes to "Scanning…" -->
-      <button
-        id="scan-btn"
-        hx-post="/api/scan"
-        hx-swap="none"
-        hx-disabled-elt="this"
-        hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
-        class="flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900
-               hover:bg-white active:scale-95 transition-all
-               disabled:opacity-40 disabled:cursor-not-allowed disabled:scale-100 disabled:pointer-events-none">
-        <svg class="htmx-indicator w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-        </svg>
-        <span class="htmx-hide-on-req">Scan Now</span>
-        <span class="htmx-show-on-req">Scanning…</span>
-      </button>
+      <div class="flex items-center gap-3">
+        <!-- Logged-in user -->
+        <span class="text-xs text-zinc-500 hidden sm:inline">{{ user.name }}</span>
+        <a href="/logout" class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors hidden sm:inline">Logout</a>
+
+        <!-- Scan Now -->
+        <button
+          id="scan-btn"
+          hx-post="/api/scan"
+          hx-swap="none"
+          hx-disabled-elt="this"
+          hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
+          class="flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900
+                 hover:bg-white active:scale-95 transition-all
+                 disabled:opacity-40 disabled:cursor-not-allowed disabled:scale-100 disabled:pointer-events-none">
+          <svg class="htmx-indicator w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <span class="htmx-hide-on-req">Scan Now</span>
+          <span class="htmx-show-on-req">Scanning…</span>
+        </button>
+      </div>
     </div>
 
     <!-- Stats strip — UX 4: each chip is a clickable link to the filtered view -->

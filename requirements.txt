@@ -1,4 +1,7 @@
 fastapi
+itsdangerous
+bcrypt
+python-multipart
 uvicorn[standard]
 httpx
 apscheduler

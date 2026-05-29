@@ -1,0 +1,13 @@
+INFO:     127.0.0.1:56697 - "GET / HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:56697 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56697 - "POST /login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:56697 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:56697 - "GET / HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:56697 - "GET /logout HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:62415 - "GET / HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:62417 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62419 - "POST /login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:62422 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:62424 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:62427 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62429 - "GET /logout HTTP/1.1" 303 See Other
