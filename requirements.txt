@@ -10,3 +10,4 @@ python-dotenv
 pyyaml
 google-genai
 groq
+passlib[bcrypt]
