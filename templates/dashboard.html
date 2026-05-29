@@ -7,7 +7,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
@@ -15,6 +15,7 @@
 
   <style>
     body { font-family: 'Inter', sans-serif; }
+    .font-mono, code, .tabular-nums { font-family: 'JetBrains Mono', monospace; }
 
     /* HTMX indicators */
     .htmx-indicator { opacity: 0; transition: opacity 150ms ease-in; }
@@ -24,43 +25,165 @@
     .htmx-show-on-req { display: none; }
     .htmx-request .htmx-show-on-req { display: inline; }
 
+    /* Scan button scanning state */
+    #scan-btn.scanning { background-color: #f59e0b; color: #1c1917; }
+
     /* Range input accent */
-    input[type="range"] { accent-color: #a1a1aa; }
+    input[type="range"] { accent-color: #34d399; }
 
     /* Scrollbar (webkit) */
-    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+
+    /* Stats strip — hide scrollbar but keep scroll */
+    .stats-strip { scrollbar-width: none; }
+    .stats-strip::-webkit-scrollbar { display: none; }
+
+    /* Drawer */
+    #filters-drawer { transform: translateX(-100%); transition: transform 300ms cubic-bezier(0.4,0,0.2,1); }
+    #filters-drawer.open { transform: translateX(0); }
+    #filters-backdrop { opacity: 0; transition: opacity 300ms ease; pointer-events: none; }
+    #filters-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    /* User / mobile dropdown */
+    #user-dropdown, #mobile-menu { transition: opacity 150ms ease, transform 150ms ease; }
+    #user-dropdown.hidden, #mobile-menu.hidden { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+    #user-dropdown:not(.hidden), #mobile-menu:not(.hidden) { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+    /* Post card hover */
+    .post-card { transition: box-shadow 200ms ease, transform 200ms ease; }
+    .post-card:hover { box-shadow: 0 20px 40px rgba(0,0,0,0.35); transform: translateY(-1px); }
+
+    /* Skeleton pulse */
+    @keyframes skeleton-pulse { 0%,100% { opacity:.4 } 50% { opacity:.7 } }
+    .skeleton-pulse { animation: skeleton-pulse 1.5s ease-in-out infinite; }
+
+    /* Logo gradient */
+    .logo-iqol {
+      background: linear-gradient(90deg, #34d399, #22d3ee);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
   </style>
 </head>
 
 <body class="bg-zinc-950 text-zinc-100 min-h-screen" hx-ext="json-enc">
 
+<!-- ── Mobile filters backdrop ───────────────────────────────────────────── -->
+<div id="filters-backdrop" onclick="closeFilters()"
+     class="md:hidden fixed inset-0 bg-black/60 z-30"></div>
+
+<!-- ── Mobile filters drawer ─────────────────────────────────────────────── -->
+<div id="filters-drawer"
+     class="md:hidden fixed top-0 left-0 h-full w-72 bg-zinc-900 border-r border-zinc-800 z-40 overflow-y-auto">
+  <div class="flex items-center justify-between px-4 py-4 border-b border-zinc-800">
+    <p class="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Filters</p>
+    <button onclick="closeFilters()"
+            class="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div class="p-4">
+    <form method="GET" action="/" class="space-y-5">
+      <div class="space-y-1.5">
+        <label class="text-xs text-zinc-500">Status</label>
+        <select name="status" onchange="this.form.submit()"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-600 cursor-pointer">
+          {% for val, label in [("all","All"), ("new","New"), ("reviewed","Reviewed"), ("replied","Replied"), ("dismissed","Dismissed"), ("prefiltered","Pre-filtered"), ("pending","Pending")] %}
+          <option value="{{ val }}" {% if filters.status == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="space-y-1.5">
+        <label class="text-xs text-zinc-500">Subreddit</label>
+        <select name="subreddit" onchange="this.form.submit()"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-600 cursor-pointer">
+          <option value="" {% if not filters.subreddit %}selected{% endif %}>All subreddits</option>
+          {% for sub in subreddits %}
+          <option value="{{ sub }}" {% if filters.subreddit == sub %}selected{% endif %}>r/{{ sub }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="space-y-1.5">
+        <label class="text-xs text-zinc-500">Source</label>
+        <select name="source" onchange="this.form.submit()"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-600 cursor-pointer">
+          {% for val, label in [("all","All sources"), ("new_feed","New feed"), ("search_sitewide","Site-wide search"), ("search_scoped","Scoped search")] %}
+          <option value="{{ val }}" {% if filters.source == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if not filters.audit_view %}
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-xs text-zinc-500">Min score</label>
+          <span id="score-display-mobile" class="text-xs font-mono text-zinc-300 tabular-nums">
+            {{ filters.min_score | int if filters.min_score is not none else 0 }}
+          </span>
+        </div>
+        <input type="range" name="min_score" min="0" max="10" step="1"
+          value="{{ filters.min_score | int if filters.min_score is not none else 0 }}"
+          oninput="document.getElementById('score-display-mobile').textContent = this.value"
+          onchange="this.form.submit()"
+          class="w-full h-1.5 rounded-full cursor-pointer">
+        <div class="flex justify-between text-xs text-zinc-700 font-mono"><span>0</span><span>5</span><span>10</span></div>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
 <!-- ── Header ──────────────────────────────────────────────────────────── -->
 <header class="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800/80">
-  <div class="max-w-screen-xl mx-auto px-6 py-4">
+  <div class="max-w-screen-xl mx-auto px-4 sm:px-6 py-4">
 
-    <div class="flex items-start justify-between">
+    <div class="flex items-center justify-between relative">
+      <!-- Logo -->
       <div>
-        <h1 class="text-xs font-semibold tracking-[0.18em] text-zinc-500 uppercase">IQOL CROWDREPLY</h1>
-        <p class="text-xs text-zinc-700 mt-0.5">Reddit brand-mention engine for alldoors.in</p>
+        <h1 class="text-xs font-semibold tracking-[0.18em] uppercase">
+          <span class="logo-iqol">IQOL</span><span class="text-zinc-400"> CROWDREPLY</span>
+        </h1>
+        <p class="text-xs text-zinc-700 mt-0.5 hidden sm:block">Reddit brand-mention engine for alldoors.in</p>
       </div>
 
-      <div class="flex items-center gap-3">
-        <!-- Logged-in user -->
-        <span class="text-xs text-zinc-500 hidden sm:inline">{{ user.name }}</span>
-        <a href="/logout" class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors hidden sm:inline">Logout</a>
+      <div class="flex items-center gap-2 sm:gap-3">
 
-        <!-- Scan Now -->
+        <!-- Desktop user dropdown -->
+        <div class="relative hidden sm:block">
+          <button id="user-menu-btn" onclick="toggleUserMenu()"
+                  class="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors py-1 px-2 rounded-lg hover:bg-zinc-800">
+            {{ user.name }}
+            <svg class="w-3 h-3 text-zinc-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+          <div id="user-dropdown"
+               class="hidden absolute right-0 top-full mt-2 w-52 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
+            <div class="px-4 py-3 border-b border-zinc-800">
+              <p class="text-xs font-semibold text-zinc-100">{{ user.name }}</p>
+              <p class="text-xs text-zinc-500 mt-0.5">{{ user.email }}</p>
+            </div>
+            <a href="/logout"
+               class="flex items-center gap-2 px-4 py-2.5 text-xs text-rose-400 hover:bg-zinc-800 transition-colors">
+              Sign out
+            </a>
+          </div>
+        </div>
+
+        <!-- Scan Now button -->
         <button
           id="scan-btn"
           hx-post="/api/scan"
           hx-swap="none"
           hx-disabled-elt="this"
-          hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
-          class="flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900
-                 hover:bg-white active:scale-95 transition-all
-                 disabled:opacity-40 disabled:cursor-not-allowed disabled:scale-100 disabled:pointer-events-none">
+          hx-on::after-request="handleScanComplete(event)"
+          class="flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-white
+                 active:scale-95 transition-all
+                 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 disabled:pointer-events-none">
           <svg class="htmx-indicator w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -68,59 +191,80 @@
           <span class="htmx-hide-on-req">Scan Now</span>
           <span class="htmx-show-on-req">Scanning…</span>
         </button>
+
+        <!-- Mobile hamburger -->
+        <button id="mobile-menu-btn" onclick="toggleMobileMenu()"
+                class="sm:hidden p-2 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <!-- Mobile dropdown -->
+        <div id="mobile-menu"
+             class="hidden sm:hidden absolute right-0 top-full mt-2 w-52 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
+          <div class="px-4 py-3 border-b border-zinc-800">
+            <p class="text-xs font-semibold text-zinc-100">{{ user.name }}</p>
+            <p class="text-xs text-zinc-500 mt-0.5">{{ user.email }}</p>
+          </div>
+          <button onclick="openFilters(); closeMobileMenu();"
+                  class="flex items-center gap-2 w-full px-4 py-2.5 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors text-left">
+            <svg class="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+            </svg>
+            Filters
+          </button>
+          <a href="/logout"
+             class="flex items-center gap-2 px-4 py-2.5 text-xs text-rose-400 hover:bg-zinc-800 transition-colors">
+            Sign out
+          </a>
+        </div>
+
       </div>
     </div>
 
-    <!-- Stats strip — UX 4: each chip is a clickable link to the filtered view -->
-    <div class="flex items-center gap-5 mt-3.5 pt-3 border-t border-zinc-800/50 flex-wrap">
+    <!-- Stats strip — horizontally scrollable on mobile -->
+    <div class="stats-strip flex items-center gap-4 sm:gap-5 mt-3.5 pt-3 border-t border-zinc-800/50 overflow-x-auto flex-nowrap pb-0.5">
 
-      <a href="/?status=new"
-         class="flex items-center gap-2 text-sm group {% if filters.status == 'new' %}ring-1 ring-amber-400/30 bg-amber-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+      <a href="/?status=new" class="flex items-center gap-2 text-sm group shrink-0 {% if filters.status == 'new' %}ring-1 ring-amber-400/30 bg-amber-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
         <span class="font-mono font-semibold text-amber-400 group-hover:underline">{{ stats.new }}</span>
-        <span class="text-zinc-500 text-xs group-hover:text-zinc-400">new</span>
+        <span class="text-zinc-500 text-xs group-hover:text-zinc-400 whitespace-nowrap">new</span>
       </a>
 
-      <a href="/?status=reviewed"
-         class="flex items-center gap-2 text-sm group {% if filters.status == 'reviewed' %}ring-1 ring-sky-400/30 bg-sky-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+      <a href="/?status=reviewed" class="flex items-center gap-2 text-sm group shrink-0 {% if filters.status == 'reviewed' %}ring-1 ring-sky-400/30 bg-sky-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0"></span>
         <span class="font-mono font-semibold text-sky-400 group-hover:underline">{{ stats.reviewed }}</span>
-        <span class="text-zinc-500 text-xs group-hover:text-zinc-400">reviewed</span>
+        <span class="text-zinc-500 text-xs group-hover:text-zinc-400 whitespace-nowrap">reviewed</span>
       </a>
 
-      <a href="/?status=replied"
-         class="flex items-center gap-2 text-sm group {% if filters.status == 'replied' %}ring-1 ring-emerald-400/30 bg-emerald-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+      <a href="/?status=replied" class="flex items-center gap-2 text-sm group shrink-0 {% if filters.status == 'replied' %}ring-1 ring-emerald-400/30 bg-emerald-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
         <span class="font-mono font-semibold text-emerald-400 group-hover:underline">{{ stats.replied_this_week }}</span>
-        <span class="text-zinc-500 text-xs group-hover:text-zinc-400">replied (7d)</span>
+        <span class="text-zinc-500 text-xs group-hover:text-zinc-400 whitespace-nowrap">replied (7d)</span>
       </a>
 
-      <a href="/?status=dismissed"
-         class="flex items-center gap-2 text-sm group {% if filters.status == 'dismissed' %}ring-1 ring-zinc-500/30 bg-zinc-500/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+      <a href="/?status=dismissed" class="flex items-center gap-2 text-sm group shrink-0 {% if filters.status == 'dismissed' %}ring-1 ring-zinc-500/30 bg-zinc-500/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0"></span>
         <span class="font-mono font-semibold text-zinc-500 group-hover:underline">{{ stats.dismissed }}</span>
-        <span class="text-zinc-600 text-xs group-hover:text-zinc-500">dismissed</span>
+        <span class="text-zinc-600 text-xs group-hover:text-zinc-500 whitespace-nowrap">dismissed</span>
       </a>
 
-      <a href="/?status=prefiltered"
-         class="flex items-center gap-2 text-sm group {% if filters.status == 'prefiltered' %}ring-1 ring-rose-400/20 bg-rose-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+      <a href="/?status=prefiltered" class="flex items-center gap-2 text-sm group shrink-0 {% if filters.status == 'prefiltered' %}ring-1 ring-rose-400/20 bg-rose-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-rose-500/50 shrink-0"></span>
         <span class="font-mono font-semibold text-zinc-500 group-hover:underline">{{ stats.prefiltered }}</span>
-        <span class="text-zinc-600 text-xs group-hover:text-zinc-500">pre-filtered</span>
+        <span class="text-zinc-600 text-xs group-hover:text-zinc-500 whitespace-nowrap">pre-filtered</span>
       </a>
 
       {% if stats.pending %}
-      <a href="/?status=pending"
-         class="flex items-center gap-2 text-sm group {% if filters.status == 'pending' %}ring-1 ring-orange-400/30 bg-orange-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+      <a href="/?status=pending" class="flex items-center gap-2 text-sm group shrink-0 {% if filters.status == 'pending' %}ring-1 ring-orange-400/30 bg-orange-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-orange-400/60 shrink-0"></span>
         <span class="font-mono font-semibold text-orange-400/80 group-hover:underline">{{ stats.pending }}</span>
-        <span class="text-zinc-600 text-xs group-hover:text-zinc-500">pending</span>
+        <span class="text-zinc-600 text-xs group-hover:text-zinc-500 whitespace-nowrap">pending</span>
       </a>
       {% endif %}
 
-      <a href="/?status=all"
-         class="flex items-center gap-2 text-sm group {% if filters.status == 'all' %}ring-1 ring-zinc-600/30 bg-zinc-600/5 rounded-md px-1.5 -mx-1.5{% endif %}">
-        <span class="text-zinc-700 text-xs group-hover:text-zinc-500">all ↗</span>
+      <a href="/?status=all" class="flex items-center gap-2 text-sm group shrink-0 {% if filters.status == 'all' %}ring-1 ring-zinc-600/30 bg-zinc-600/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+        <span class="text-zinc-700 text-xs group-hover:text-zinc-500 whitespace-nowrap">all ↗</span>
       </a>
 
     </div>
@@ -129,32 +273,28 @@
 </header>
 
 <!-- ── Body ─────────────────────────────────────────────────────────────── -->
-<div class="max-w-screen-xl mx-auto px-6 py-6 flex gap-7">
+<div class="max-w-screen-xl mx-auto px-4 sm:px-6 py-6 flex gap-7">
 
-  <!-- Filter sidebar -->
-  <aside class="w-52 flex-none">
+  <!-- Filter sidebar — desktop only -->
+  <aside class="w-52 flex-none hidden md:block">
     <div class="sticky top-24 space-y-6">
-
       <p class="text-xs font-semibold text-zinc-600 uppercase tracking-widest">Filters</p>
-
       <form method="GET" action="/" id="filter-form" class="space-y-5">
 
-        <!-- Status -->
         <div class="space-y-1.5">
           <label class="text-xs text-zinc-500">Status</label>
           <select name="status" onchange="this.form.submit()"
-            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer">
+            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-600 cursor-pointer">
             {% for val, label in [("all","All"), ("new","New"), ("reviewed","Reviewed"), ("replied","Replied"), ("dismissed","Dismissed"), ("prefiltered","Pre-filtered"), ("pending","Pending")] %}
             <option value="{{ val }}" {% if filters.status == val %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
 
-        <!-- Subreddit -->
         <div class="space-y-1.5">
           <label class="text-xs text-zinc-500">Subreddit</label>
           <select name="subreddit" onchange="this.form.submit()"
-            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer">
+            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-600 cursor-pointer">
             <option value="" {% if not filters.subreddit %}selected{% endif %}>All subreddits</option>
             {% for sub in subreddits %}
             <option value="{{ sub }}" {% if filters.subreddit == sub %}selected{% endif %}>r/{{ sub }}</option>
@@ -162,18 +302,16 @@
           </select>
         </div>
 
-        <!-- Source -->
         <div class="space-y-1.5">
           <label class="text-xs text-zinc-500">Source</label>
           <select name="source" onchange="this.form.submit()"
-            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer">
+            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-600 cursor-pointer">
             {% for val, label in [("all","All sources"), ("new_feed","New feed"), ("search_sitewide","Site-wide search"), ("search_scoped","Scoped search")] %}
             <option value="{{ val }}" {% if filters.source == val %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
 
-        <!-- Min score slider — hidden for audit views (all / dismissed / prefiltered) -->
         {% if not filters.audit_view %}
         <div class="space-y-2">
           <div class="flex items-center justify-between">
@@ -182,10 +320,7 @@
               {{ filters.min_score | int if filters.min_score is not none else 0 }}
             </span>
           </div>
-          <input
-            type="range"
-            name="min_score"
-            min="0" max="10" step="1"
+          <input type="range" name="min_score" min="0" max="10" step="1"
             value="{{ filters.min_score | int if filters.min_score is not none else 0 }}"
             oninput="document.getElementById('score-display').textContent = this.value"
             onchange="this.form.submit()"
@@ -205,30 +340,61 @@
   <!-- Posts area -->
   <main class="flex-1 min-w-0">
 
+    <!-- Mobile filters button -->
+    <button onclick="openFilters()"
+            class="md:hidden flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+      </svg>
+      Filters
+      {% if filters.status != 'new' or filters.subreddit or filters.source != 'all' %}
+      <span class="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+      {% endif %}
+    </button>
+
     {% if not posts %}
-    <!-- UX 3: Contextual empty state -->
-    <div class="flex flex-col items-center justify-center py-24 text-center">
-      <div class="text-2xl text-zinc-800 mb-4">⊘</div>
-      <p class="text-zinc-400 font-medium text-sm mb-1">
-        No {% if filters.status != 'all' %}{{ filters.status }} {% endif %}posts.
-      </p>
-      {% set total_other = stats.new + stats.prefiltered + stats.dismissed + stats.reviewed + stats.replied %}
-      {% if total_other > 0 %}
-      <p class="text-zinc-600 text-xs max-w-xs leading-relaxed mt-1">
-        There are posts in other views —
-        {% if stats.new %}<a href="/?status=new" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.new }} new</a>{% endif %}{% if stats.new and (stats.prefiltered or stats.dismissed) %}, {% endif %}{% if stats.prefiltered %}<a href="/?status=prefiltered" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.prefiltered }} pre-filtered</a>{% endif %}{% if stats.prefiltered and stats.dismissed %}, {% endif %}{% if stats.dismissed %}<a href="/?status=dismissed" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.dismissed }} dismissed</a>{% endif %}.
-        Use the Status filter or click a chip above.
-      </p>
+    <!-- Context-aware empty states -->
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+      <div class="text-3xl text-zinc-800 mb-4">⊘</div>
+      {% if filters.status == 'new' %}
+        <p class="text-zinc-400 font-medium text-sm mb-2">No new posts in queue</p>
+        <p class="text-zinc-600 text-xs max-w-xs leading-relaxed">
+          Click <strong class="text-zinc-500">Scan Now</strong> to fetch fresh posts from Reddit.
+        </p>
+      {% elif filters.status == 'dismissed' %}
+        <p class="text-zinc-400 font-medium text-sm mb-2">No posts dismissed yet</p>
+        <p class="text-zinc-600 text-xs max-w-xs leading-relaxed">Dismissed posts will appear here when you manually dismiss them or when the LLM scores them as irrelevant.</p>
+      {% elif filters.status == 'replied' %}
+        <p class="text-zinc-400 font-medium text-sm mb-2">No replies sent yet</p>
+        <p class="text-zinc-600 text-xs max-w-xs leading-relaxed">Mark a post as replied after you copy and post the reply on Reddit — it will show up here.</p>
+      {% elif filters.status == 'reviewed' %}
+        <p class="text-zinc-400 font-medium text-sm mb-2">Nothing in review</p>
+        <p class="text-zinc-600 text-xs max-w-xs leading-relaxed">Posts you've opened but haven't actioned show here.</p>
+      {% elif filters.status == 'prefiltered' %}
+        <p class="text-zinc-400 font-medium text-sm mb-2">No pre-filtered posts</p>
+        <p class="text-zinc-600 text-xs max-w-xs leading-relaxed">Posts dropped by the local keyword filter before reaching the LLM appear here.</p>
+      {% elif filters.status == 'pending' %}
+        <p class="text-zinc-400 font-medium text-sm mb-2">Nothing pending retry</p>
+        <p class="text-zinc-600 text-xs max-w-xs leading-relaxed">Posts queued for retry (after quota or rate-limit errors) will appear here.</p>
       {% else %}
-      <p class="text-zinc-600 text-xs mt-1">Click "Scan Now" to fetch posts from Reddit.</p>
+        <p class="text-zinc-400 font-medium text-sm mb-2">No posts found</p>
+        {% set total_other = stats.new + stats.prefiltered + stats.dismissed + stats.reviewed + stats.replied %}
+        {% if total_other > 0 %}
+        <p class="text-zinc-600 text-xs max-w-xs leading-relaxed mt-1">
+          Try
+          {% if stats.new %}<a href="/?status=new" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.new }} new</a>{% endif %}{% if stats.new and stats.dismissed %}, {% endif %}{% if stats.dismissed %}<a href="/?status=dismissed" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.dismissed }} dismissed</a>{% endif %}
+          or adjust your filters.
+        </p>
+        {% else %}
+        <p class="text-zinc-600 text-xs mt-1">Click "Scan Now" to fetch posts from Reddit.</p>
+        {% endif %}
       {% endif %}
     </div>
 
     {% else %}
 
-    <!-- UX 8: Result count -->
     <p class="text-xs text-zinc-600 font-mono mb-3 tabular-nums">
-      Showing {{ posts | length }} {{ filters.status if filters.status != 'all' else 'total' }}
+      {{ posts | length }} {{ filters.status if filters.status != 'all' else 'total' }}
       post{{ 's' if posts | length != 1 else '' }}
       {%- if filters.subreddit %} in r/{{ filters.subreddit }}{% endif %}
     </p>
@@ -244,53 +410,76 @@
 </div>
 
 <!-- ── Footer ───────────────────────────────────────────────────────────── -->
-<footer class="border-t border-zinc-900 px-6 py-4 mt-4">
-  <div class="max-w-screen-xl mx-auto flex items-center justify-between">
-    <span class="text-xs text-zinc-700">IQOL CROWDREPLY · running locally</span>
-    <span class="text-xs text-zinc-700 font-mono">
-      last scan: {% if last_scan_time %}{{ last_scan_time | timeago }}{% else %}never{% endif %}
-    </span>
+<footer class="border-t border-zinc-900 px-4 sm:px-6 py-4 mt-4">
+  <div class="max-w-screen-xl mx-auto flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <span class="text-xs text-zinc-700 hidden sm:inline">IQOL CROWDREPLY</span>
+      <span class="text-xs text-zinc-800 hidden sm:inline">·</span>
+      <span class="text-xs text-zinc-800 font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5">v0.1 MVP</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-xs text-zinc-700 font-mono">
+        {% if last_scan_time %}{{ last_scan_time | timeago }}{% else %}never scanned{% endif %}
+      </span>
+      <a href="/logout" class="text-xs text-zinc-700 hover:text-rose-400 transition-colors">logout</a>
+    </div>
   </div>
 </footer>
 
-<!-- ── Toast ─────────────────────────────────────────────────────────────── -->
-<div id="toast" class="fixed bottom-6 right-6 z-50 pointer-events-none">
+<!-- ── Toast (slide in from top) ─────────────────────────────────────────── -->
+<div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
   <div id="toast-inner"
     class="bg-zinc-800 border border-zinc-700/80 text-zinc-100 text-sm px-4 py-2.5 rounded-xl shadow-2xl
-           opacity-0 translate-y-2 transition-all duration-200 ease-out">
+           opacity-0 -translate-y-3 transition-all duration-200 ease-out whitespace-nowrap">
     <span id="toast-msg"></span>
   </div>
 </div>
 
 <!-- ── JavaScript ────────────────────────────────────────────────────────── -->
 <script>
-// ── Toast ──────────────────────────────────────────────────────────────────
+// ── Toast (slide from top) ─────────────────────────────────────────────────
 let _toastTimer;
 function showToast(msg) {
   const inner = document.getElementById('toast-inner');
   document.getElementById('toast-msg').textContent = msg;
-  inner.classList.remove('opacity-0', 'translate-y-2');
+  inner.classList.remove('opacity-0', '-translate-y-3');
   inner.classList.add('opacity-100', 'translate-y-0');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => {
-    inner.classList.add('opacity-0', 'translate-y-2');
     inner.classList.remove('opacity-100', 'translate-y-0');
+    inner.classList.add('opacity-0', '-translate-y-3');
   }, 3000);
+}
+
+// ── Scan complete handler ──────────────────────────────────────────────────
+function handleScanComplete(event) {
+  if (!event.detail.successful) return;
+  try {
+    const r = JSON.parse(event.detail.xhr.responseText);
+    const n = r.qualified || 0;
+    const msg = n > 0
+      ? '✓ ' + n + ' post' + (n === 1 ? '' : 's') + ' qualified'
+      : '✓ Scan done — no new qualified posts';
+    showToast(msg);
+  } catch(e) {
+    showToast('✓ Scan complete');
+  }
+  setTimeout(() => window.location.reload(), 1600);
 }
 
 // ── Fade & remove a card ───────────────────────────────────────────────────
 function fadeRemove(el) {
   if (!el) return;
-  el.style.transition = 'opacity 500ms ease-out';
+  el.style.transition = 'opacity 400ms ease-out, transform 400ms ease-out';
   el.style.opacity = '0';
-  setTimeout(() => el.remove(), 520);
+  el.style.transform = 'translateY(-4px)';
+  setTimeout(() => el.remove(), 420);
 }
 
 // ── Reply tone tab switcher ────────────────────────────────────────────────
 function selectTab(clickedBtn, postId) {
   const card = document.getElementById('post-' + postId);
   const idx = parseInt(clickedBtn.dataset.tab, 10);
-
   card.querySelectorAll('[data-tab]').forEach(btn => {
     const active = parseInt(btn.dataset.tab, 10) === idx;
     btn.classList.toggle('bg-zinc-700', active);
@@ -298,7 +487,6 @@ function selectTab(clickedBtn, postId) {
     btn.classList.toggle('text-zinc-500', !active);
     btn.classList.toggle('hover:text-zinc-300', !active);
   });
-
   card.querySelectorAll('[data-panel]').forEach(panel => {
     panel.classList.toggle('hidden', parseInt(panel.dataset.panel, 10) !== idx);
   });
@@ -332,28 +520,25 @@ async function copyAndOpen(postId, url) {
   const activePanel = card.querySelector('[data-panel]:not(.hidden)');
   if (!activePanel) return;
   const text = activePanel.querySelector('textarea').value;
-
   try {
     await navigator.clipboard.writeText(text);
     showToast('✓ copied — paste into reddit');
     window.open(url, '_blank', 'noopener');
   } catch {
-    showToast('Copy failed — select & copy the text manually');
+    showToast('Copy failed — select & copy manually');
   }
 }
 
-// ── Mark Replied (vanilla fetch — captures edited textarea value) ──────────
+// ── Mark Replied ───────────────────────────────────────────────────────────
 async function markReplied(postId) {
   const card = document.getElementById('post-' + postId);
   const activePanel = card.querySelector('[data-panel]:not(.hidden)');
   const replyUsed = activePanel ? activePanel.querySelector('textarea').value : null;
-
   const resp = await fetch('/api/posts/' + postId + '/status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: 'replied', reply_used: replyUsed }),
   });
-
   if (resp.ok) {
     showToast('✓ marked replied');
     fadeRemove(card);
@@ -361,6 +546,46 @@ async function markReplied(postId) {
     showToast('Error — could not update status');
   }
 }
+
+// ── Mobile filter drawer ───────────────────────────────────────────────────
+function openFilters() {
+  document.getElementById('filters-drawer').classList.add('open');
+  document.getElementById('filters-backdrop').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeFilters() {
+  document.getElementById('filters-drawer').classList.remove('open');
+  document.getElementById('filters-backdrop').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// ── Desktop user menu ──────────────────────────────────────────────────────
+function toggleUserMenu() {
+  const d = document.getElementById('user-dropdown');
+  d.classList.toggle('hidden');
+}
+document.addEventListener('click', e => {
+  const btn = document.getElementById('user-menu-btn');
+  const dd = document.getElementById('user-dropdown');
+  if (btn && dd && !btn.contains(e.target) && !dd.contains(e.target)) {
+    dd.classList.add('hidden');
+  }
+});
+
+// ── Mobile hamburger menu ──────────────────────────────────────────────────
+function toggleMobileMenu() {
+  document.getElementById('mobile-menu').classList.toggle('hidden');
+}
+function closeMobileMenu() {
+  document.getElementById('mobile-menu').classList.add('hidden');
+}
+document.addEventListener('click', e => {
+  const btn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+    menu.classList.add('hidden');
+  }
+});
 </script>
 
 </body>
