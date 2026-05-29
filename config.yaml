@@ -13,10 +13,9 @@ keywords:
   - "plot"
   - "apartment"
   - "flat for sale"
-  - "flat for rent"
   - "where to buy"
   - "where shall i buy"
-  - "looking for"
+  - "looking to buy"
   - "home loan"
   - "property in bangalore"
   - "real estate"
@@ -39,3 +38,72 @@ areas_of_interest:
   - Sarjapur
   - Hebbal
   - Yelahanka
+
+search_queries:
+  - "flat for sale bangalore"
+  - "apartment for sale bangalore"
+  - "2bhk for sale bangalore"
+  - "3bhk for sale bangalore"
+  - "plot for sale bangalore"
+  - "selling my flat bangalore"
+  - "selling apartment bangalore"
+  - "buy flat bangalore"
+  - "buy apartment koramangala"
+  - "property for sale bangalore"
+  - "villa for sale bangalore"
+  - "resale flat bangalore"
+  - "ready to move bangalore"
+  - "investment property bangalore"
+  - "plot koramangala whitefield sarjapur"
+
+search_settings:
+  site_wide: true
+  scoped_to_core_subs: true
+  sort: new
+  limit: 50
+  max_age_days: 30
+
+# Hard disqualifiers — rental/PG intent (penalty -80 in prefilter)
+rental_keywords:
+  - "rent"
+  - "rental"
+  - "for rent"
+  - "pg"
+  - "paying guest"
+  - "hostel"
+  - "roommate"
+  - "flatmate"
+  - "lease"
+  - "leasing"
+  - "tenant"
+  - "monthly rent"
+  - "deposit"
+  - "11 month"
+
+# Soft disqualifiers — non-real-estate topics (penalty -40 in prefilter)
+negative_keywords:
+  - "salon"
+  - "restaurant"
+  - "food"
+  - "job"
+  - "hiring"
+  - "visa"
+  - "passport"
+  - "dating"
+  - "movie"
+  - "traffic"
+  - "weather"
+  - "politics"
+  - "recipe"
+  - "fashion"
+  - "gym"
+  - "hotel"
+  - "cricket"
+  - "ipl"
+  - "startup"
+  - "coding"
+  - "relatives"
+  - "salary"
+  - "advice"
+  - "rant"
+  - "vent"

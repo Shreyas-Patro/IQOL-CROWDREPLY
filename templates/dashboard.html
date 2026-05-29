@@ -16,13 +16,13 @@
   <style>
     body { font-family: 'Inter', sans-serif; }
 
-    /* HTMX indicator: hidden by default, visible during request */
+    /* HTMX indicators */
     .htmx-indicator { opacity: 0; transition: opacity 150ms ease-in; }
     .htmx-request .htmx-indicator,
     .htmx-request.htmx-indicator { opacity: 1; }
-
-    /* Hide static label text while request is in flight */
     .htmx-request .htmx-hide-on-req { display: none; }
+    .htmx-show-on-req { display: none; }
+    .htmx-request .htmx-show-on-req { display: inline; }
 
     /* Range input accent */
     input[type="range"] { accent-color: #a1a1aa; }
@@ -46,44 +46,77 @@
         <p class="text-xs text-zinc-700 mt-0.5">Reddit brand-mention engine for alldoors.in</p>
       </div>
 
-      <!-- Scan Now -->
+      <!-- Scan Now — BUG 2: disabled during request, label changes to "Scanning…" -->
       <button
         id="scan-btn"
         hx-post="/api/scan"
         hx-swap="none"
+        hx-disabled-elt="this"
         hx-on::after-request="if(event.detail.successful){ window.location.reload(); }"
-        class="flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-white active:scale-95 transition-all">
+        class="flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900
+               hover:bg-white active:scale-95 transition-all
+               disabled:opacity-40 disabled:cursor-not-allowed disabled:scale-100 disabled:pointer-events-none">
         <svg class="htmx-indicator w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
         </svg>
-        <span class="htmx-hide-on-req text-zinc-400 text-xs">▶</span>
-        Scan Now
+        <span class="htmx-hide-on-req">Scan Now</span>
+        <span class="htmx-show-on-req">Scanning…</span>
       </button>
     </div>
 
-    <!-- Stats strip -->
-    <div class="flex items-center gap-6 mt-3.5 pt-3 border-t border-zinc-800/50">
-      <span class="flex items-center gap-2 text-sm">
+    <!-- Stats strip — UX 4: each chip is a clickable link to the filtered view -->
+    <div class="flex items-center gap-5 mt-3.5 pt-3 border-t border-zinc-800/50 flex-wrap">
+
+      <a href="/?status=new"
+         class="flex items-center gap-2 text-sm group {% if filters.status == 'new' %}ring-1 ring-amber-400/30 bg-amber-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
-        <span class="font-mono font-semibold text-amber-400">{{ stats.new }}</span>
-        <span class="text-zinc-600 text-xs">new</span>
-      </span>
-      <span class="flex items-center gap-2 text-sm">
+        <span class="font-mono font-semibold text-amber-400 group-hover:underline">{{ stats.new }}</span>
+        <span class="text-zinc-500 text-xs group-hover:text-zinc-400">new</span>
+      </a>
+
+      <a href="/?status=reviewed"
+         class="flex items-center gap-2 text-sm group {% if filters.status == 'reviewed' %}ring-1 ring-sky-400/30 bg-sky-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0"></span>
-        <span class="font-mono font-semibold text-sky-400">{{ stats.reviewed }}</span>
-        <span class="text-zinc-600 text-xs">reviewed</span>
-      </span>
-      <span class="flex items-center gap-2 text-sm">
+        <span class="font-mono font-semibold text-sky-400 group-hover:underline">{{ stats.reviewed }}</span>
+        <span class="text-zinc-500 text-xs group-hover:text-zinc-400">reviewed</span>
+      </a>
+
+      <a href="/?status=replied"
+         class="flex items-center gap-2 text-sm group {% if filters.status == 'replied' %}ring-1 ring-emerald-400/30 bg-emerald-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-        <span class="font-mono font-semibold text-emerald-400">{{ stats.replied_this_week }}</span>
-        <span class="text-zinc-600 text-xs">replied (7d)</span>
-      </span>
-      <span class="flex items-center gap-2 text-sm">
-        <span class="w-1.5 h-1.5 rounded-full bg-zinc-700 shrink-0"></span>
-        <span class="font-mono font-semibold text-zinc-600">{{ stats.dismissed }}</span>
-        <span class="text-zinc-700 text-xs">dismissed</span>
-      </span>
+        <span class="font-mono font-semibold text-emerald-400 group-hover:underline">{{ stats.replied_this_week }}</span>
+        <span class="text-zinc-500 text-xs group-hover:text-zinc-400">replied (7d)</span>
+      </a>
+
+      <a href="/?status=dismissed"
+         class="flex items-center gap-2 text-sm group {% if filters.status == 'dismissed' %}ring-1 ring-zinc-500/30 bg-zinc-500/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+        <span class="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0"></span>
+        <span class="font-mono font-semibold text-zinc-500 group-hover:underline">{{ stats.dismissed }}</span>
+        <span class="text-zinc-600 text-xs group-hover:text-zinc-500">dismissed</span>
+      </a>
+
+      <a href="/?status=prefiltered"
+         class="flex items-center gap-2 text-sm group {% if filters.status == 'prefiltered' %}ring-1 ring-rose-400/20 bg-rose-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+        <span class="w-1.5 h-1.5 rounded-full bg-rose-500/50 shrink-0"></span>
+        <span class="font-mono font-semibold text-zinc-500 group-hover:underline">{{ stats.prefiltered }}</span>
+        <span class="text-zinc-600 text-xs group-hover:text-zinc-500">pre-filtered</span>
+      </a>
+
+      {% if stats.pending %}
+      <a href="/?status=pending"
+         class="flex items-center gap-2 text-sm group {% if filters.status == 'pending' %}ring-1 ring-orange-400/30 bg-orange-400/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+        <span class="w-1.5 h-1.5 rounded-full bg-orange-400/60 shrink-0"></span>
+        <span class="font-mono font-semibold text-orange-400/80 group-hover:underline">{{ stats.pending }}</span>
+        <span class="text-zinc-600 text-xs group-hover:text-zinc-500">pending</span>
+      </a>
+      {% endif %}
+
+      <a href="/?status=all"
+         class="flex items-center gap-2 text-sm group {% if filters.status == 'all' %}ring-1 ring-zinc-600/30 bg-zinc-600/5 rounded-md px-1.5 -mx-1.5{% endif %}">
+        <span class="text-zinc-700 text-xs group-hover:text-zinc-500">all ↗</span>
+      </a>
+
     </div>
 
   </div>
@@ -105,7 +138,7 @@
           <label class="text-xs text-zinc-500">Status</label>
           <select name="status" onchange="this.form.submit()"
             class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer">
-            {% for val, label in [("all","All"), ("new","New"), ("reviewed","Reviewed"), ("replied","Replied"), ("dismissed","Dismissed")] %}
+            {% for val, label in [("all","All"), ("new","New"), ("reviewed","Reviewed"), ("replied","Replied"), ("dismissed","Dismissed"), ("prefiltered","Pre-filtered"), ("pending","Pending")] %}
             <option value="{{ val }}" {% if filters.status == val %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
@@ -123,17 +156,31 @@
           </select>
         </div>
 
-        <!-- Min score slider -->
+        <!-- Source -->
+        <div class="space-y-1.5">
+          <label class="text-xs text-zinc-500">Source</label>
+          <select name="source" onchange="this.form.submit()"
+            class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-600 cursor-pointer">
+            {% for val, label in [("all","All sources"), ("new_feed","New feed"), ("search_sitewide","Site-wide search"), ("search_scoped","Scoped search")] %}
+            <option value="{{ val }}" {% if filters.source == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Min score slider — hidden for audit views (all / dismissed / prefiltered) -->
+        {% if not filters.audit_view %}
         <div class="space-y-2">
           <div class="flex items-center justify-between">
             <label class="text-xs text-zinc-500">Min score</label>
-            <span id="score-display" class="text-xs font-mono text-zinc-300 tabular-nums">{{ filters.min_score | int }}</span>
+            <span id="score-display" class="text-xs font-mono text-zinc-300 tabular-nums">
+              {{ filters.min_score | int if filters.min_score is not none else 0 }}
+            </span>
           </div>
           <input
             type="range"
             name="min_score"
             min="0" max="10" step="1"
-            value="{{ filters.min_score | int }}"
+            value="{{ filters.min_score | int if filters.min_score is not none else 0 }}"
             oninput="document.getElementById('score-display').textContent = this.value"
             onchange="this.form.submit()"
             class="w-full h-1.5 rounded-full cursor-pointer">
@@ -141,6 +188,9 @@
             <span>0</span><span>5</span><span>10</span>
           </div>
         </div>
+        {% else %}
+        <p class="text-xs text-zinc-700 italic leading-relaxed">Score filter off — showing all posts in this view.</p>
+        {% endif %}
 
       </form>
     </div>
@@ -150,15 +200,33 @@
   <main class="flex-1 min-w-0">
 
     {% if not posts %}
-    <!-- Empty state -->
-    <div class="flex flex-col items-center justify-center py-28 text-center">
-      <div class="text-3xl text-zinc-700 mb-5 rotate-45">↗</div>
-      <p class="text-zinc-400 font-medium text-sm">No posts in the queue yet.</p>
-      <p class="text-zinc-600 text-xs mt-1.5 max-w-xs leading-relaxed">
-        Click &ldquo;Scan Now&rdquo; to fetch the latest from Reddit.
+    <!-- UX 3: Contextual empty state -->
+    <div class="flex flex-col items-center justify-center py-24 text-center">
+      <div class="text-2xl text-zinc-800 mb-4">⊘</div>
+      <p class="text-zinc-400 font-medium text-sm mb-1">
+        No {% if filters.status != 'all' %}{{ filters.status }} {% endif %}posts.
       </p>
+      {% set total_other = stats.new + stats.prefiltered + stats.dismissed + stats.reviewed + stats.replied %}
+      {% if total_other > 0 %}
+      <p class="text-zinc-600 text-xs max-w-xs leading-relaxed mt-1">
+        There are posts in other views —
+        {% if stats.new %}<a href="/?status=new" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.new }} new</a>{% endif %}{% if stats.new and (stats.prefiltered or stats.dismissed) %}, {% endif %}{% if stats.prefiltered %}<a href="/?status=prefiltered" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.prefiltered }} pre-filtered</a>{% endif %}{% if stats.prefiltered and stats.dismissed %}, {% endif %}{% if stats.dismissed %}<a href="/?status=dismissed" class="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">{{ stats.dismissed }} dismissed</a>{% endif %}.
+        Use the Status filter or click a chip above.
+      </p>
+      {% else %}
+      <p class="text-zinc-600 text-xs mt-1">Click "Scan Now" to fetch posts from Reddit.</p>
+      {% endif %}
     </div>
+
     {% else %}
+
+    <!-- UX 8: Result count -->
+    <p class="text-xs text-zinc-600 font-mono mb-3 tabular-nums">
+      Showing {{ posts | length }} {{ filters.status if filters.status != 'all' else 'total' }}
+      post{{ 's' if posts | length != 1 else '' }}
+      {%- if filters.subreddit %} in r/{{ filters.subreddit }}{% endif %}
+    </p>
+
     <div class="space-y-3">
       {% for post in posts %}
         {% include "_post_card.html" %}
@@ -172,10 +240,9 @@
 <!-- ── Footer ───────────────────────────────────────────────────────────── -->
 <footer class="border-t border-zinc-900 px-6 py-4 mt-4">
   <div class="max-w-screen-xl mx-auto flex items-center justify-between">
-    <span class="text-xs text-zinc-700">IQOL CROWDREPLY · MVP · running locally</span>
+    <span class="text-xs text-zinc-700">IQOL CROWDREPLY · running locally</span>
     <span class="text-xs text-zinc-700 font-mono">
-      last scan:
-      {% if last_scan_time %}{{ last_scan_time | timeago }}{% else %}never{% endif %}
+      last scan: {% if last_scan_time %}{{ last_scan_time | timeago }}{% else %}never{% endif %}
     </span>
   </div>
 </footer>

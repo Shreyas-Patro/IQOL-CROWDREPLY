@@ -45,8 +45,29 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS llm_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                called_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                model TEXT,
+                tokens_in INTEGER,
+                tokens_out INTEGER
+            );
+
             CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
             CREATE INDEX IF NOT EXISTS idx_posts_posted ON posts(posted_at DESC);
+        """)
+        # Safe migrations for existing databases
+        for col, typedef in [
+            ("prefilter_score", "INTEGER"),
+            ("dismiss_reason",  "TEXT"),
+            ("source",          "TEXT"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE posts ADD COLUMN {col} {typedef}")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        conn.executescript("""
         """)
         conn.commit()
     finally:
@@ -63,8 +84,8 @@ def upsert_post(post_dict: dict) -> bool:
             return False
         conn.execute(
             """INSERT INTO posts
-               (id, subreddit, title, body, author, url, posted_at, score, raw_json)
-               VALUES (:id, :subreddit, :title, :body, :author, :url, :posted_at, :score, :raw_json)""",
+               (id, subreddit, title, body, author, url, posted_at, score, raw_json, source)
+               VALUES (:id, :subreddit, :title, :body, :author, :url, :posted_at, :score, :raw_json, :source)""",
             post_dict,
         )
         conn.commit()
@@ -127,7 +148,7 @@ def update_status(post_id: str, status: str, reply_used: str = None):
         conn.close()
 
 
-def get_posts(status: str = None, min_score: float = None, subreddit: str = None, limit: int = 100) -> list:
+def get_posts(status: str = None, min_score: float = None, subreddit: str = None, source: str = None, limit: int = 100) -> list:
     conn = get_conn()
     try:
         clauses = []
@@ -136,11 +157,14 @@ def get_posts(status: str = None, min_score: float = None, subreddit: str = None
             clauses.append("status = ?")
             params.append(status)
         if min_score is not None:
-            clauses.append("score >= ?")
+            clauses.append("(score IS NULL OR score >= ?)")
             params.append(min_score)
         if subreddit is not None:
             clauses.append("subreddit = ?")
             params.append(subreddit)
+        if source is not None:
+            clauses.append("source = ?")
+            params.append(source)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(limit)
         return conn.execute(
@@ -186,8 +210,51 @@ def get_stats() -> dict:
             "reviewed": counts.get("reviewed", 0),
             "replied": counts.get("replied", 0),
             "dismissed": counts.get("dismissed", 0),
+            "prefiltered": counts.get("prefiltered", 0),
+            "pending": counts.get("pending", 0),
             "replied_this_week": replied_this_week,
         }
+    finally:
+        conn.close()
+
+
+def set_dismiss_info(post_id: str, prefilter_score: int = None, dismiss_reason: str = None):
+    conn = get_conn()
+    try:
+        updates, params = [], []
+        if prefilter_score is not None:
+            updates.append("prefilter_score = ?")
+            params.append(prefilter_score)
+        if dismiss_reason is not None:
+            updates.append("dismiss_reason = ?")
+            params.append(dismiss_reason)
+        if updates:
+            params.append(post_id)
+            conn.execute(f"UPDATE posts SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def count_llm_calls_today() -> int:
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM llm_calls WHERE called_at >= date('now')"
+        ).fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
+
+
+def record_llm_call(model: str = None, tokens_in: int = None, tokens_out: int = None):
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO llm_calls (model, tokens_in, tokens_out) VALUES (?, ?, ?)",
+            (model, tokens_in, tokens_out),
+        )
+        conn.commit()
     finally:
         conn.close()
 

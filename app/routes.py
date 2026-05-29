@@ -69,14 +69,22 @@ async def dashboard(
     status: Optional[str] = "new",
     min_score: Optional[float] = None,
     subreddit: Optional[str] = None,
+    source: Optional[str] = None,
 ):
     filter_status = None if not status or status == "all" else status
-    effective_min_score = min_score if min_score is not None else _MIN_SCORE_ENV
+    _audit_view = filter_status in (None, "dismissed", "prefiltered", "pending")
+    # Audit views show everything — never apply a default floor.
+    # Actionable views (new / reviewed / replied) apply env default when slider not set.
+    if _audit_view:
+        effective_min_score = None
+    else:
+        effective_min_score = min_score if min_score is not None else _MIN_SCORE_ENV
 
     rows = get_posts(
         status=filter_status,
         min_score=effective_min_score,
         subreddit=subreddit,
+        source=source if source and source != "all" else None,
         limit=100,
     )
     posts = []
@@ -92,6 +100,8 @@ async def dashboard(
             "status": status or "new",
             "min_score": effective_min_score,
             "subreddit": subreddit,
+            "source": source or "all",
+            "audit_view": _audit_view,
         },
         "subreddits": _load_subreddits(),
         "last_scan_time": state.get_last_scan(),
@@ -105,9 +115,10 @@ async def api_posts(
     status: Optional[str] = None,
     min_score: Optional[float] = None,
     subreddit: Optional[str] = None,
+    source: Optional[str] = None,
     limit: int = 100,
 ):
-    rows = get_posts(status=status, min_score=min_score, subreddit=subreddit, limit=limit)
+    rows = get_posts(status=status, min_score=min_score, subreddit=subreddit, source=source, limit=limit)
     result = []
     for row in rows:
         p = dict(row)
